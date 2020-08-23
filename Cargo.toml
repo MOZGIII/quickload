@@ -15,7 +15,7 @@ futures-util = "0.3"
 nix = "0.18"
 
 [target.'cfg(windows)'.dependencies]
-winapi = { version = "0.3", features = ["fileapi"] }
+winapi = { version = "0.3", features = ["fileapi", "winnt", "processthreadsapi", "impl-default"] }
 
 [dev-dependencies]
 tokio = { version = "0.2", features = ["sync", "macros"] }
