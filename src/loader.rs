@@ -207,6 +207,7 @@ where
             tokio::task::block_in_place(|| writer.write_all_at(pos, buf.as_ref()))?;
             completed_tx.send(()).unwrap();
         }
+        tokio::task::block_in_place(|| writer.flush())?;
         Ok(())
     }
 }
