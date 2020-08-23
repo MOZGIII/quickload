@@ -2,7 +2,7 @@ use std::{
     ffi::CString,
     fs::{File, OpenOptions},
     io::{Seek, SeekFrom, Write},
-    os::windows::{fs::OpenOptionsExt, io::AsRawHandle},
+    os::windows::io::AsRawHandle,
 };
 use winapi::{
     shared::{
@@ -16,9 +16,8 @@ use winapi::{
         securitybaseapi::AdjustTokenPrivileges,
         winbase::LookupPrivilegeValueA,
         winnt::{
-            GENERIC_WRITE, HANDLE, LPCSTR, PHANDLE, PLUID, PTOKEN_PRIVILEGES,
-            SE_MANAGE_VOLUME_NAME, SE_PRIVILEGE_ENABLED, TOKEN_ADJUST_PRIVILEGES, TOKEN_PRIVILEGES,
-            TOKEN_QUERY,
+            HANDLE, LPCSTR, PHANDLE, PLUID, PTOKEN_PRIVILEGES, SE_MANAGE_VOLUME_NAME,
+            SE_PRIVILEGE_ENABLED, TOKEN_ADJUST_PRIVILEGES, TOKEN_PRIVILEGES, TOKEN_QUERY,
         },
     },
 };
@@ -102,10 +101,7 @@ pub(super) fn prepare_privileges() -> Result<(), anyhow::Error> {
 #[inline]
 pub(super) fn open_options() -> OpenOptions {
     let mut opts = OpenOptions::new();
-    opts.access_mode(GENERIC_WRITE)
-        .write(true)
-        .create(true)
-        .truncate(true);
+    opts.write(true).create(true).truncate(true);
     opts
 }
 
