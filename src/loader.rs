@@ -1,5 +1,6 @@
 use crate::{chunk_picker, disk_space_allocation, Chunk};
 use anyhow::{anyhow, bail};
+use futures_util::poll;
 use hyper::{
     body::{Bytes, HttpBody},
     http,
@@ -103,11 +104,16 @@ where
 
         let (write_queue_tx, write_queue_rx) = mpsc::channel(16);
 
-        let writer_loop_handle =
+        let mut writer_loop_handle =
             tokio::spawn(async { Self::write_loop(writer, write_queue_rx).await.unwrap() });
 
         let sem = Arc::new(Semaphore::new(8));
         while let Some(chunk) = chunk_picker.next() {
+            // If the writer loop exited - we quit too.
+            if poll!(&mut writer_loop_handle).is_ready() {
+                break;
+            };
+
             let permit = sem.clone().acquire_owned().await;
             let write_queue_tx = write_queue_tx.clone();
             let client = client.clone();
