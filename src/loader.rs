@@ -5,12 +5,8 @@ use hyper::{
     body::{Bytes, HttpBody},
     http,
 };
-use std::{
-    fs::{File, OpenOptions},
-    num::NonZeroU64,
-    path::Path,
-    sync::Arc,
-};
+use positioned_io_preview::RandomAccessFile;
+use std::{fs::OpenOptions, num::NonZeroU64, path::Path, sync::Arc};
 use tokio::{
     stream::StreamExt,
     sync::{mpsc, oneshot, Semaphore},
@@ -25,7 +21,7 @@ pub struct Loader<C, W> {
     pub chunk_picker: chunk_picker::Linear,
 }
 
-impl<C> Loader<C, File>
+impl<C> Loader<C, RandomAccessFile>
 where
     C: hyper::client::connect::Connect + Clone + Send + Sync + 'static,
 {
@@ -65,7 +61,7 @@ where
     }
 }
 
-impl<C> Loader<C, File> {
+impl<C> Loader<C, RandomAccessFile> {
     pub fn with_size(
         into: impl AsRef<Path>,
         client: hyper::Client<C>,
@@ -80,6 +76,7 @@ impl<C> Loader<C, File> {
             .truncate(true)
             .open(into)?;
         disk_space_allocation::allocate(&mut writer, 0, size)?;
+        let writer = RandomAccessFile::try_new(writer)?;
 
         let chunk_picker = chunk_picker::Linear::new(size, NonZeroU64::new(512 * 1024).unwrap());
         Ok(Self {
@@ -94,7 +91,7 @@ impl<C> Loader<C, File> {
 impl<C, W> Loader<C, W>
 where
     C: hyper::client::connect::Connect + Clone + Send + Sync + 'static,
-    W: positioned_io::WriteAt + Send + 'static,
+    W: positioned_io_preview::WriteAt + Send + 'static,
 {
     pub async fn run(self) -> Result<(), anyhow::Error> {
         let Self {
