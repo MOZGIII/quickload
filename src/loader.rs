@@ -203,7 +203,7 @@ where
                 pos,
                 completed_tx,
             } = item;
-            writer.write_all_at(pos, buf.as_ref())?;
+            tokio::task::block_in_place(|| writer.write_all_at(pos, buf.as_ref()))?;
             completed_tx.send(()).unwrap();
         }
         Ok(())
