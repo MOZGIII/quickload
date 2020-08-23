@@ -10,6 +10,12 @@ hyper = "0.13"
 positioned-io = "0.2"
 tokio = { version = "0.2", features = ["sync"] }
 
+[target.'cfg(unix)'.dependencies]
+nix = "0.18"
+
+[target.'cfg(windows)'.dependencies]
+winapi = { version = "0.3", features = ["fileapi"] }
+
 [dev-dependencies]
 tokio = { version = "0.2", features = ["sync", "macros"] }
 hyper-tls = "0.4"

@@ -1,4 +1,4 @@
-use crate::{chunk_picker, Chunk};
+use crate::{chunk_picker, disk_space_allocation, Chunk};
 use anyhow::{anyhow, bail};
 use hyper::{
     body::{Bytes, HttpBody},
@@ -72,11 +72,12 @@ impl<C> Loader<C, File> {
         size: ByteSize,
     ) -> Result<Self, anyhow::Error> {
         let client = Arc::new(client);
-        let writer = OpenOptions::new()
+        let mut writer = OpenOptions::new()
             .write(true)
             .create(true)
             .truncate(true)
             .open(into)?;
+        disk_space_allocation::allocate(&mut writer, 0, size)?;
         let chunk_picker = chunk_picker::Linear::new(size, NonZeroU64::new(512 * 1024).unwrap());
         Ok(Self {
             client,
