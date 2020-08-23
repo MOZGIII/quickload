@@ -5,7 +5,12 @@ use hyper::{
     body::{Bytes, HttpBody},
     http,
 };
-use std::{fs::File, num::NonZeroU64, path::Path, sync::Arc};
+use std::{
+    fs::{File, OpenOptions},
+    num::NonZeroU64,
+    path::Path,
+    sync::Arc,
+};
 use tokio::{
     stream::StreamExt,
     sync::{mpsc, oneshot, Semaphore},
@@ -69,7 +74,11 @@ impl<C> Loader<C, File> {
     ) -> Result<Self, anyhow::Error> {
         let client = Arc::new(client);
 
-        let mut writer = disk_space_allocation::open_options().open(into)?;
+        let mut writer = OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .open(into)?;
         disk_space_allocation::allocate(&mut writer, 0, size)?;
 
         let chunk_picker = chunk_picker::Linear::new(size, NonZeroU64::new(512 * 1024).unwrap());

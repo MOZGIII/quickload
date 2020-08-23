@@ -1,6 +1,6 @@
 use std::{
     ffi::CString,
-    fs::{File, OpenOptions},
+    fs::File,
     io::{Seek, SeekFrom, Write},
     os::windows::io::AsRawHandle,
 };
@@ -96,13 +96,6 @@ pub(super) fn prepare_privileges() -> Result<(), anyhow::Error> {
     })?;
 
     Ok(())
-}
-
-#[inline]
-pub(super) fn open_options() -> OpenOptions {
-    let mut opts = OpenOptions::new();
-    opts.write(true).create(true).truncate(true);
-    opts
 }
 
 #[inline]

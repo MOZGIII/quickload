@@ -1,4 +1,4 @@
-use std::fs::{File, OpenOptions};
+use std::fs::File;
 
 #[cfg(unix)]
 mod unix;
@@ -13,17 +13,6 @@ pub fn prepare_privileges() -> Result<(), anyhow::Error> {
     #[cfg(windows)]
     {
         windows::prepare_privileges()
-    }
-}
-
-pub fn open_options() -> OpenOptions {
-    #[cfg(unix)]
-    {
-        unix::open_options()
-    }
-    #[cfg(windows)]
-    {
-        windows::open_options()
     }
 }
 

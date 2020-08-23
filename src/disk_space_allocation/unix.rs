@@ -1,20 +1,9 @@
 use nix::fcntl::{fallocate, FallocateFlags};
-use std::{
-    convert::TryInto,
-    fs::{File, OpenOptions},
-    os::unix::io::AsRawFd,
-};
+use std::{convert::TryInto, fs::File, os::unix::io::AsRawFd};
 
 #[inline]
 pub(super) fn prepare_privileges() -> Result<(), anyhow::Error> {
     // NOOP
-}
-
-#[inline]
-pub(super) fn open_options() -> OpenOptions {
-    let mut opts = OpenOptions::new();
-    opts.write(true).create(true).truncate(true);
-    opts
 }
 
 #[inline]
