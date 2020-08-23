@@ -104,8 +104,7 @@ where
 
         let (write_queue_tx, write_queue_rx) = mpsc::channel(16);
 
-        let mut writer_loop_handle =
-            tokio::spawn(async { Self::write_loop(writer, write_queue_rx).await.unwrap() });
+        let mut writer_loop_handle = tokio::spawn(Self::write_loop(writer, write_queue_rx));
 
         let sem = Arc::new(Semaphore::new(8));
         while let Some(chunk) = chunk_picker.next() {
@@ -127,7 +126,7 @@ where
         }
 
         drop(write_queue_tx);
-        writer_loop_handle.await?;
+        writer_loop_handle.await??;
 
         drop(client);
 
