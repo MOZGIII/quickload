@@ -16,7 +16,12 @@ tokio = { version = "1", features = ["sync", "rt-multi-thread"] }
 nix = { version = "0.26", default-features = false }
 
 [target.'cfg(windows)'.dependencies]
-winapi = { version = "0.3", features = ["fileapi", "winnt", "processthreadsapi", "impl-default"] }
+winapi = { version = "0.3", features = [
+  "fileapi",
+  "winnt",
+  "processthreadsapi",
+  "impl-default",
+] }
 
 [dev-dependencies]
 hyper-tls = "0.5"
