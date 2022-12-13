@@ -12,7 +12,7 @@ tokio = { version = "1", features = ["sync", "rt-multi-thread"] }
 futures-util = "0.3"
 cfg-if = "1"
 
-[target.'cfg(unix)'.dependencies]
+[target.'cfg(all(unix, not(target_os = "macos")))'.dependencies]
 nix = "0.26"
 
 [target.'cfg(windows)'.dependencies]
