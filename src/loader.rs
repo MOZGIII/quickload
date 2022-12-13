@@ -7,10 +7,7 @@ use hyper::{
 };
 use positioned_io_preview::RandomAccessFile;
 use std::{fs::OpenOptions, num::NonZeroU64, path::Path, sync::Arc};
-use tokio::{
-    stream::StreamExt,
-    sync::{mpsc, oneshot, Semaphore},
-};
+use tokio::sync::{mpsc, oneshot, Semaphore};
 
 pub type ByteSize = u64;
 
@@ -136,7 +133,7 @@ where
         client: Arc<hyper::Client<C>>,
         uri: hyper::Uri,
         chunk: Chunk<ByteSize>,
-        mut write_queue: mpsc::Sender<WriteRequest>,
+        write_queue: mpsc::Sender<WriteRequest>,
     ) -> Result<(), anyhow::Error> {
         let (start, end) = chunk.into_inner();
 
@@ -195,7 +192,7 @@ where
         mut writer: W,
         mut queue: mpsc::Receiver<WriteRequest>,
     ) -> Result<(), anyhow::Error> {
-        while let Some(item) = queue.next().await {
+        while let Some(item) = queue.recv().await {
             let WriteRequest {
                 buf,
                 pos,

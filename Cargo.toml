@@ -6,9 +6,9 @@ edition = "2018"
 
 [dependencies]
 anyhow = "1.0"
-hyper = "0.13"
+hyper = { version = "0.14", features = ["client", "http1", "http2"] }
 positioned-io-preview = "0.3"
-tokio = { version = "0.2", features = ["sync", "blocking", "rt-threaded"] }
+tokio = { version = "1", features = ["sync", "rt-multi-thread"] }
 futures-util = "0.3"
 cfg-if = "1"
 
@@ -19,6 +19,6 @@ nix = "0.18"
 winapi = { version = "0.3", features = ["fileapi", "winnt", "processthreadsapi", "impl-default"] }
 
 [dev-dependencies]
-tokio = { version = "0.2", features = ["sync", "macros"] }
-hyper-tls = "0.4"
+tokio = { version = "1", features = ["macros"] }
+hyper-tls = "0.5"
 pretty_assertions = "0.6"
