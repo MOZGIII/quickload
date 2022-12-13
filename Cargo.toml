@@ -21,4 +21,4 @@ winapi = { version = "0.3", features = ["fileapi", "winnt", "processthreadsapi",
 [dev-dependencies]
 tokio = { version = "1", features = ["macros"] }
 hyper-tls = "0.5"
-pretty_assertions = "0.6"
+pretty_assertions = "1.3"
