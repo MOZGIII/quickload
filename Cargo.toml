@@ -13,7 +13,7 @@ positioned-io-preview = "0.3"
 tokio = { version = "1", features = ["sync", "rt-multi-thread"] }
 
 [target.'cfg(all(unix, not(target_os = "macos")))'.dependencies]
-nix = { version = "0.26", default-features = false }
+nix = { version = "0.26", default-features = false, features = ["fs"] }
 
 [target.'cfg(windows)'.dependencies]
 winapi = { version = "0.3", features = [
