@@ -18,19 +18,19 @@ const allPlatforms = {
     os: "windows-latest",
     buildEnvScript: buildEnvScriptPath("windows.sh"),
     isOnSelfHostedRunner: false,
-    essential: false,
+    essential: true,
     env: {
       CARGO_INCREMENTAL: "0"
     },
     cacheKey: "windows-amd64",
-    isBroken: true,
+    isBroken: false,
   },
   macos: {
     name: "macOS (amd64)",
     os: "macos-latest",
     buildEnvScript: buildEnvScriptPath("macos.sh"),
     isOnSelfHostedRunner: false,
-    essential: false,
+    essential: true,
     env: {},
     cacheKey: "macos-amd64",
     isBroken: false,
