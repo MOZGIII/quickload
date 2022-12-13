@@ -1,3 +1,5 @@
+#![allow(unsafe_code)]
+
 use std::{
     ffi::CString,
     fs::File,
