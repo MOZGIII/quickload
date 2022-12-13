@@ -72,7 +72,7 @@ impl<C> Loader<C, RandomAccessFile> {
             .create(true)
             .truncate(true)
             .open(into)?;
-        disk_space_allocation::allocate(&mut writer, 0, size)?;
+        disk_space_allocation::allocate(&mut writer, size)?;
         let writer = RandomAccessFile::try_new(writer)?;
 
         let chunk_picker = chunk_picker::Linear::new(size, NonZeroU64::new(512 * 1024).unwrap());

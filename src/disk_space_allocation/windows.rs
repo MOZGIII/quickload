@@ -99,13 +99,10 @@ pub(super) fn prepare_privileges() -> Result<(), anyhow::Error> {
 }
 
 #[inline]
-pub(super) fn allocate(file: &mut File, offset: u64, len: u64) -> Result<(), anyhow::Error> {
-    // Store current file position.
-    let current_pos = file.seek(SeekFrom::Current(0))?;
-
-    // Aim at the desired end of the file.
-    let end_pos = offset + len;
-    file.seek(SeekFrom::Start(end_pos))?;
+pub(super) fn allocate(file: &mut File, len: u64) -> Result<(), anyhow::Error> {
+    // Aim at the desired end of the file while recording the previous
+    // seek position.
+    let current_pos = file.seek(SeekFrom::Start(len))?;
 
     // Set new file end. This call will fill the file with zeroes.
     // We need an actual allocation (not a hole), and at the same time we
@@ -113,10 +110,11 @@ pub(super) fn allocate(file: &mut File, offset: u64, len: u64) -> Result<(), any
     // reasons.
     cvt(unsafe { SetEndOfFile(file.as_raw_handle()) })?;
 
-    if end_pos > 0 {
-        file.seek(SeekFrom::Start(end_pos - 1))?;
+    // Compute the position one byte behind the desired end of the file.
+    if let Some(pre_end_pos) = len.checked_sub(1) {
+        file.seek(SeekFrom::Start(pre_end_pos))?;
         file.write(&[0])?;
-    }
+    };
 
     // Restore the file position we captured at the start.
     file.seek(SeekFrom::Start(current_pos))?;

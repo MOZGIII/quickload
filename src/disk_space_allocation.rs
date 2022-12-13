@@ -17,6 +17,6 @@ pub fn prepare_privileges() -> Result<(), anyhow::Error> {
     implementation::prepare_privileges()
 }
 
-pub fn allocate(file: &mut File, offset: u64, len: u64) -> Result<(), anyhow::Error> {
-    implementation::allocate(file, offset, len)
+pub fn allocate(file: &mut File, len: u64) -> Result<(), anyhow::Error> {
+    implementation::allocate(file, len)
 }

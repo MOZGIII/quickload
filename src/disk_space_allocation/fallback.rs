@@ -10,14 +10,9 @@ pub(super) fn prepare_privileges() -> Result<(), anyhow::Error> {
 }
 
 #[inline]
-pub(super) fn allocate(file: &mut File, offset: u64, len: u64) -> Result<(), anyhow::Error> {
-    // Aim at the desired end of the file.
-    let end_pos = offset
-        .checked_add(len)
-        .ok_or_else(|| anyhow::format_err!("file allocation overflows the offset type used"))?;
-
+pub(super) fn allocate(file: &mut File, len: u64) -> Result<(), anyhow::Error> {
     // Compute the position one byte behind the desired end of the file.
-    let Some(pre_end_pos) = end_pos.checked_sub(1) else {
+    let Some(pre_end_pos) = len.checked_sub(1) else {
         return Ok(())
     };
 
