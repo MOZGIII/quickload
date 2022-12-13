@@ -10,6 +10,7 @@ hyper = "0.13"
 positioned-io-preview = "0.3"
 tokio = { version = "0.2", features = ["sync", "blocking", "rt-threaded"] }
 futures-util = "0.3"
+cfg-if = "1"
 
 [target.'cfg(unix)'.dependencies]
 nix = "0.18"
