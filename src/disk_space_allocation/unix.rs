@@ -4,6 +4,7 @@ use std::{convert::TryInto, fs::File, os::unix::io::AsRawFd};
 #[inline]
 pub(super) fn prepare_privileges() -> Result<(), anyhow::Error> {
     // NOOP
+    Ok(())
 }
 
 #[inline]

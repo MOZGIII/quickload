@@ -5,7 +5,7 @@ use std::{
 
 #[inline]
 pub(super) fn prepare_privileges() -> Result<(), anyhow::Error> {
-    // noop
+    // NOOP
     Ok(())
 }
 
