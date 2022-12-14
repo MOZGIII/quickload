@@ -1,3 +1,6 @@
+//! A simple CLI app that downloads the contents at a URL and saves it into
+//! a file.
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     quickload::disk_space_allocation::prepare_privileges()?;
