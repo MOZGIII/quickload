@@ -115,7 +115,7 @@ pub(super) fn allocate(file: &mut File, len: u64) -> Result<(), anyhow::Error> {
     // Compute the position one byte behind the desired end of the file.
     if let Some(pre_end_pos) = len.checked_sub(1) {
         file.seek(SeekFrom::Start(pre_end_pos))?;
-        file.write(&[0])?;
+        let _ = file.write(&[0])?;
     };
 
     // Restore the file position we captured at the start.
