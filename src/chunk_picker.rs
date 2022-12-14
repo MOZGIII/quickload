@@ -38,6 +38,8 @@ impl Iterator for Linear {
 
 #[cfg(test)]
 mod tests {
+    #![allow(clippy::erasing_op, clippy::identity_op)]
+
     use super::Linear;
     use crate::Chunk;
     use pretty_assertions::assert_eq;

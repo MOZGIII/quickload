@@ -40,9 +40,9 @@ where
 
         let size = headers
             .get(http::header::CONTENT_LENGTH)
-            .ok_or(anyhow!(
-                "unable to detect size: HEAD didn't return Content-Length header"
-            ))?
+            .ok_or_else(|| {
+                anyhow!("unable to detect size: HEAD didn't return Content-Length header")
+            })?
             .to_str()?
             .parse()?;
 
@@ -93,7 +93,7 @@ where
     pub async fn run(self) -> Result<(), anyhow::Error> {
         let Self {
             client,
-            mut chunk_picker,
+            chunk_picker,
             uri,
             writer,
         } = self;
@@ -103,15 +103,15 @@ where
         let mut writer_loop_handle = tokio::spawn(Self::write_loop(writer, write_queue_rx));
 
         let sem = Arc::new(Semaphore::new(8));
-        while let Some(chunk) = chunk_picker.next() {
+        for chunk in chunk_picker {
             // If the writer loop exited - we quit too.
             if poll!(&mut writer_loop_handle).is_ready() {
                 break;
             };
 
-            let permit = sem.clone().acquire_owned().await;
+            let permit = Arc::clone(&sem).acquire_owned().await;
             let write_queue_tx = write_queue_tx.clone();
-            let client = client.clone();
+            let client = Arc::clone(&client);
             let uri = uri.clone();
             tokio::spawn(async move {
                 Self::process_range(client, uri, chunk, write_queue_tx)
@@ -172,9 +172,8 @@ where
                     completed_tx,
                 })
                 .await;
-            match result {
-                Err(_) => panic!("unable to send write request"),
-                Ok(()) => (),
+            if let Err(err) = result {
+                panic!("unable to send write request: {}", err);
             }
             completed_rx.await?;
             pos += len;
