@@ -1,3 +1,5 @@
+//! The quickload loader implementation.
+
 use anyhow::{anyhow, bail};
 use futures_util::poll;
 use hyper::{
@@ -9,12 +11,19 @@ use quickload_disk_space_allocation as disk_space_allocation;
 use std::{fs::OpenOptions, num::NonZeroU64, path::Path, sync::Arc};
 use tokio::sync::{mpsc, oneshot, Semaphore};
 
+/// The type we use for data size calculations.
 pub type ByteSize = u64;
 
+/// The loader.
 pub struct Loader<C, W> {
+    /// A hyper client we can share across multiple threads.
     pub client: Arc<hyper::Client<C>>,
+    /// The the URL to download.
     pub uri: hyper::Uri,
+    /// The write to write to (file for instance).
     pub writer: W,
+    /// The chunk picker to define the strategy of picking the order of
+    /// the chunks to download.
     pub chunk_picker: quickload_chunk_picker::linear::Linear,
 }
 
@@ -22,6 +31,8 @@ impl<C> Loader<C, RandomAccessFile>
 where
     C: hyper::client::connect::Connect + Clone + Send + Sync + 'static,
 {
+    /// Issue an HTTP request with a HEAD method to the URL to download and
+    /// attempt to detect the size of the data to accomodate.
     pub async fn detect_size(
         into: impl AsRef<Path>,
         client: hyper::Client<C>,
@@ -59,6 +70,12 @@ where
 }
 
 impl<C> Loader<C, RandomAccessFile> {
+    /// Initialize the loader to download the provided URL storing it into
+    /// a file at the `into` path, assuming the data size of `size`.
+    ///
+    /// The underlying disk space will be allocated via
+    /// the  [`disk_space_allocation`] facilities, and the [`RandomAccessFile`]
+    /// will be used to interface with the filesystem.
     pub fn with_size(
         into: impl AsRef<Path>,
         client: hyper::Client<C>,
@@ -91,6 +108,7 @@ where
     C: hyper::client::connect::Connect + Clone + Send + Sync + 'static,
     W: positioned_io_preview::WriteAt + Send + 'static,
 {
+    /// Run the download operation represented by this loader.
     pub async fn run(self) -> Result<(), anyhow::Error> {
         let Self {
             client,

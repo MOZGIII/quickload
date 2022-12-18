@@ -12,7 +12,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let https = hyper_tls::HttpsConnector::new();
     let client = hyper::Client::builder().build::<_, hyper::Body>(https);
     let url = url.parse()?;
-    let loader = quickload::Loader::detect_size(file_path, client, url).await?;
+    let loader = quickload_loader::Loader::detect_size(file_path, client, url).await?;
     loader.run().await?;
 
     Ok(())
