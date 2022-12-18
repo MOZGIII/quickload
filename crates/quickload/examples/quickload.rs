@@ -3,7 +3,7 @@
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    quickload::disk_space_allocation::prepare_privileges()?;
+    quickload_disk_space_allocation::prepare_privileges()?;
 
     let mut args = std::env::args().skip(1);
     let url = args.next().ok_or("pass url as a first argument")?;

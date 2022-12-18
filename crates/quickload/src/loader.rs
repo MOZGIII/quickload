@@ -1,4 +1,4 @@
-use crate::{chunk_picker, disk_space_allocation, Chunk};
+use crate::{chunk_picker, Chunk};
 use anyhow::{anyhow, bail};
 use futures_util::poll;
 use hyper::{
@@ -6,6 +6,7 @@ use hyper::{
     http,
 };
 use positioned_io_preview::RandomAccessFile;
+use quickload_disk_space_allocation as disk_space_allocation;
 use std::{fs::OpenOptions, num::NonZeroU64, path::Path, sync::Arc};
 use tokio::sync::{mpsc, oneshot, Semaphore};
 
