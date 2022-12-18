@@ -1,6 +1,11 @@
+//! Linear picker.
+
 use crate::Chunk;
 use std::{cmp::min, num::NonZeroU64};
 
+/// The linear chunk picker strategy.
+///
+/// Selects the chunks one by one from the beginning of the range to the end.
 pub struct Linear {
     total_size: u64,
     chunk_size: NonZeroU64,
@@ -8,6 +13,7 @@ pub struct Linear {
 }
 
 impl Linear {
+    /// Create a new [`Linear`].
     pub fn new(total_size: u64, chunk_size: NonZeroU64) -> Self {
         Self {
             total_size,

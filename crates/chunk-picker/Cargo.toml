@@ -1,0 +1,10 @@
+[package]
+name = "quickload-chunk-picker"
+version = "0.1.0"
+authors = ["MOZGIII <mike-n@narod.ru>"]
+edition = "2018"
+
+[dependencies]
+
+[dev-dependencies]
+pretty_assertions = "1.3"

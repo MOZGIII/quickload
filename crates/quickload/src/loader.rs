@@ -1,4 +1,3 @@
-use crate::{chunk_picker, Chunk};
 use anyhow::{anyhow, bail};
 use futures_util::poll;
 use hyper::{
@@ -16,7 +15,7 @@ pub struct Loader<C, W> {
     pub client: Arc<hyper::Client<C>>,
     pub uri: hyper::Uri,
     pub writer: W,
-    pub chunk_picker: chunk_picker::Linear,
+    pub chunk_picker: quickload_chunk_picker::linear::Linear,
 }
 
 impl<C> Loader<C, RandomAccessFile>
@@ -76,7 +75,8 @@ impl<C> Loader<C, RandomAccessFile> {
         disk_space_allocation::allocate(&mut writer, size)?;
         let writer = RandomAccessFile::try_new(writer)?;
 
-        let chunk_picker = chunk_picker::Linear::new(size, NonZeroU64::new(512 * 1024).unwrap());
+        let chunk_picker =
+            quickload_chunk_picker::linear::Linear::new(size, NonZeroU64::new(512 * 1024).unwrap());
         Ok(Self {
             client,
             writer,
@@ -133,7 +133,7 @@ where
     async fn process_range(
         client: Arc<hyper::Client<C>>,
         uri: hyper::Uri,
-        chunk: Chunk<ByteSize>,
+        chunk: quickload_chunk_picker::Chunk<ByteSize>,
         write_queue: mpsc::Sender<WriteRequest>,
     ) -> Result<(), anyhow::Error> {
         let (start, end) = chunk.into_inner();

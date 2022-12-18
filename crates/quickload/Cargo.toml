@@ -5,6 +5,7 @@ authors = ["MOZGIII <mike-n@narod.ru>"]
 edition = "2018"
 
 [dependencies]
+quickload-chunk-picker = { path = "../chunk-picker" }
 quickload-disk-space-allocation = { path = "../disk-space-allocation" }
 
 anyhow = "1.0"
@@ -12,8 +13,3 @@ futures-util = "0.3"
 hyper = { version = "0.14", features = ["client", "http1", "http2"] }
 positioned-io-preview = "0.3"
 tokio = { version = "1", features = ["sync", "rt-multi-thread"] }
-
-[dev-dependencies]
-hyper-tls = "0.5"
-pretty_assertions = "1.3"
-tokio = { version = "1", features = ["macros"] }
