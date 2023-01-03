@@ -3,7 +3,7 @@
 use std::fs::File;
 
 cfg_if::cfg_if! {
-    if #[cfg(all(unix, not(target_os = "macos")))] {
+    if #[cfg(all(unix, not(any(target_os = "macos", target_os = "ios"))))] {
         mod unix;
         use self::unix as implementation;
     } else if #[cfg(windows)] {
