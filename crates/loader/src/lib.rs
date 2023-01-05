@@ -7,12 +7,24 @@ use hyper::{
     http,
 };
 use positioned_io_preview::RandomAccessFile;
+use quickload_chunker::{CapturedChunk, Config};
 use quickload_disk_space_allocation as disk_space_allocation;
 use std::{fs::OpenOptions, num::NonZeroU64, path::Path, sync::Arc};
 use tokio::sync::{mpsc, oneshot, Semaphore};
 
 /// The type we use for data size calculations.
 pub type ByteSize = u64;
+
+/// The config type for the chunker.
+#[derive(Debug)]
+pub enum ChunkerConfig {}
+
+impl Config for ChunkerConfig {
+    type ChunkIndex = u64;
+    type TotalSize = ByteSize;
+    type ChunkSize = NonZeroU64;
+    type Offset = ByteSize;
+}
 
 /// The loader.
 pub struct Loader<C, W> {
@@ -24,7 +36,7 @@ pub struct Loader<C, W> {
     pub writer: W,
     /// The chunk picker to define the strategy of picking the order of
     /// the chunks to download.
-    pub chunk_picker: quickload_chunk_picker::linear::Linear,
+    pub chunker: quickload_chunker::Chunker<ChunkerConfig>,
 }
 
 impl<C> Loader<C, RandomAccessFile>
@@ -92,13 +104,16 @@ impl<C> Loader<C, RandomAccessFile> {
         disk_space_allocation::allocate(&mut writer, size)?;
         let writer = RandomAccessFile::try_new(writer)?;
 
-        let chunk_picker =
-            quickload_chunk_picker::linear::Linear::new(size, NonZeroU64::new(512 * 1024).unwrap());
+        let chunker = quickload_chunker::Chunker {
+            chunk_size: NonZeroU64::new(512 * 1024).unwrap(),
+            total_size: size,
+        };
+
         Ok(Self {
             client,
             writer,
             uri,
-            chunk_picker,
+            chunker,
         })
     }
 }
@@ -112,7 +127,7 @@ where
     pub async fn run(self) -> Result<(), anyhow::Error> {
         let Self {
             client,
-            chunk_picker,
+            chunker,
             uri,
             writer,
         } = self;
@@ -120,6 +135,8 @@ where
         let (write_queue_tx, write_queue_rx) = mpsc::channel(16);
 
         let mut writer_loop_handle = tokio::spawn(Self::write_loop(writer, write_queue_rx));
+
+        let chunk_picker = quickload_linear_chunk_picker::Linear::new(&chunker);
 
         let sem = Arc::new(Semaphore::new(8));
         for chunk in chunk_picker {
@@ -151,12 +168,16 @@ where
     async fn process_range(
         client: Arc<hyper::Client<C>>,
         uri: hyper::Uri,
-        chunk: quickload_chunk_picker::Chunk<ByteSize>,
+        chunk: quickload_chunker::CapturedChunk<ChunkerConfig>,
         write_queue: mpsc::Sender<WriteRequest>,
     ) -> Result<(), anyhow::Error> {
-        let (start, end) = chunk.into_inner();
+        let CapturedChunk {
+            first_byte_offset,
+            last_byte_offset,
+            ..
+        } = chunk;
 
-        let range_header = format!("bytes={}-{}", start, end);
+        let range_header = format!("bytes={}-{}", first_byte_offset, last_byte_offset);
 
         let req = http::Request::builder()
             .uri(uri)
@@ -179,7 +200,7 @@ where
 
         let mut body = res.into_body();
 
-        let mut pos = start;
+        let mut pos = first_byte_offset;
         while let Some(data) = body.data().await {
             let data = data?;
             let len = data.len() as ByteSize;
@@ -198,10 +219,10 @@ where
             pos += len;
         }
         anyhow::ensure!(
-            end == pos - 1,
+            last_byte_offset == pos - 1,
             "bytes written ({}) doen't match files expected to write ({})",
             pos - 1,
-            end,
+            last_byte_offset,
         );
         Ok(())
     }

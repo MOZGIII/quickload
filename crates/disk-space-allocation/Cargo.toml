@@ -2,7 +2,7 @@
 name = "quickload-disk-space-allocation"
 version = "0.1.0"
 authors = ["MOZGIII <mike-n@narod.ru>"]
-edition = "2018"
+edition = "2021"
 
 [dependencies]
 anyhow = "1.0"
