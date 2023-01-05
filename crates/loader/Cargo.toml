@@ -2,11 +2,12 @@
 name = "quickload-loader"
 version = "0.1.0"
 authors = ["MOZGIII <mike-n@narod.ru>"]
-edition = "2018"
+edition = "2021"
 
 [dependencies]
-quickload-chunk-picker = { path = "../chunk-picker" }
+quickload-chunker = { path = "../chunker" }
 quickload-disk-space-allocation = { path = "../disk-space-allocation" }
+quickload-linear-chunk-picker = { path = "../linear-chunk-picker" }
 
 anyhow = "1.0"
 futures-util = "0.3"

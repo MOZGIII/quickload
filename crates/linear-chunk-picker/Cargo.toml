@@ -1,0 +1,13 @@
+[package]
+name = "quickload-linear-chunk-picker"
+version = "0.1.0"
+authors = ["MOZGIII <mike-n@narod.ru>"]
+edition = "2021"
+
+[dependencies]
+quickload-chunker = { path = "../chunker" }
+
+num-traits = "0.2"
+
+[dev-dependencies]
+pretty_assertions = "1.3"

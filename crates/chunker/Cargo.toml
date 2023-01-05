@@ -1,10 +1,12 @@
 [package]
-name = "quickload-chunk-picker"
+name = "quickload-chunker"
 version = "0.1.0"
 authors = ["MOZGIII <mike-n@narod.ru>"]
-edition = "2018"
+edition = "2021"
 
 [dependencies]
+nonzero_ext = "0.3"
+num-traits = { version = "0.2", features = [] }
 
 [dev-dependencies]
 pretty_assertions = "1.3"
