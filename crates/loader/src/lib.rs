@@ -15,6 +15,9 @@ use tokio::sync::{mpsc, oneshot, Semaphore};
 /// The type we use for data size calculations.
 pub type ByteSize = u64;
 
+/// The type we use for chunk size.
+pub type NonZeroByteSize = NonZeroU64;
+
 /// The config type for the chunker.
 #[derive(Debug)]
 pub enum ChunkerConfig {}
@@ -22,7 +25,7 @@ pub enum ChunkerConfig {}
 impl Config for ChunkerConfig {
     type ChunkIndex = u64;
     type TotalSize = ByteSize;
-    type ChunkSize = NonZeroU64;
+    type ChunkSize = NonZeroByteSize;
     type Offset = ByteSize;
 }
 
@@ -43,13 +46,12 @@ impl<C> Loader<C, RandomAccessFile>
 where
     C: hyper::client::connect::Connect + Clone + Send + Sync + 'static,
 {
-    /// Issue an HTTP request with a HEAD method to the URL to download and
-    /// attempt to detect the size of the data to accomodate.
+    /// Issue an HTTP request with a HEAD method to the URL you need
+    /// to download and attempt to detect the size of the data to accomodate.
     pub async fn detect_size(
-        into: impl AsRef<Path>,
-        client: hyper::Client<C>,
-        uri: hyper::Uri,
-    ) -> Result<Self, anyhow::Error> {
+        client: &hyper::Client<C>,
+        uri: &hyper::Uri,
+    ) -> Result<ByteSize, anyhow::Error> {
         let response = client
             .request(
                 http::Request::builder()
@@ -77,7 +79,7 @@ where
             bail!("server does not accept range requests");
         }
 
-        Self::with_size(into, client, uri, size)
+        Ok(size)
     }
 }
 
@@ -92,7 +94,8 @@ impl<C> Loader<C, RandomAccessFile> {
         into: impl AsRef<Path>,
         client: hyper::Client<C>,
         uri: hyper::Uri,
-        size: ByteSize,
+        total_size: ByteSize,
+        chunk_size: NonZeroByteSize,
     ) -> Result<Self, anyhow::Error> {
         let client = Arc::new(client);
 
@@ -101,12 +104,12 @@ impl<C> Loader<C, RandomAccessFile> {
             .create(true)
             .truncate(true)
             .open(into)?;
-        disk_space_allocation::allocate(&mut writer, size)?;
+        disk_space_allocation::allocate(&mut writer, total_size)?;
         let writer = RandomAccessFile::try_new(writer)?;
 
         let chunker = quickload_chunker::Chunker {
-            chunk_size: NonZeroU64::new(512 * 1024).unwrap(),
-            total_size: size,
+            chunk_size,
+            total_size,
         };
 
         Ok(Self {
