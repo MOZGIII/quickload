@@ -42,83 +42,60 @@ pub struct Loader<C, W> {
     pub chunker: quickload_chunker::Chunker<ChunkerConfig>,
 }
 
-impl<C> Loader<C, RandomAccessFile>
+/// Issue an HTTP request with a HEAD method to the URL you need
+/// to download and attempt to detect the size of the data to accomodate.
+pub async fn detect_size<C>(
+    client: &hyper::Client<C>,
+    uri: &hyper::Uri,
+) -> Result<ByteSize, anyhow::Error>
 where
     C: hyper::client::connect::Connect + Clone + Send + Sync + 'static,
 {
-    /// Issue an HTTP request with a HEAD method to the URL you need
-    /// to download and attempt to detect the size of the data to accomodate.
-    pub async fn detect_size(
-        client: &hyper::Client<C>,
-        uri: &hyper::Uri,
-    ) -> Result<ByteSize, anyhow::Error> {
-        let response = client
-            .request(
-                http::Request::builder()
-                    .method(http::Method::HEAD)
-                    .uri(uri.clone())
-                    .body(hyper::Body::empty())?,
-            )
-            .await?;
+    let response = client
+        .request(
+            http::Request::builder()
+                .method(http::Method::HEAD)
+                .uri(uri.clone())
+                .body(hyper::Body::empty())?,
+        )
+        .await?;
 
-        let headers = response.headers();
+    let headers = response.headers();
 
-        let size = headers
-            .get(http::header::CONTENT_LENGTH)
-            .ok_or_else(|| {
-                anyhow!("unable to detect size: HEAD didn't return Content-Length header")
-            })?
-            .to_str()?
-            .parse()?;
+    let size = headers
+        .get(http::header::CONTENT_LENGTH)
+        .ok_or_else(|| anyhow!("unable to detect size: HEAD didn't return Content-Length header"))?
+        .to_str()?
+        .parse()?;
 
-        let supports_ranges = headers
-            .get_all(http::header::ACCEPT_RANGES)
-            .into_iter()
-            .any(|val| val == "bytes");
-        if !supports_ranges {
-            bail!("server does not accept range requests");
-        }
-
-        Ok(size)
+    let supports_ranges = headers
+        .get_all(http::header::ACCEPT_RANGES)
+        .into_iter()
+        .any(|val| val == "bytes");
+    if !supports_ranges {
+        bail!("server does not accept range requests");
     }
+
+    Ok(size)
 }
 
-impl<C> Loader<C, RandomAccessFile> {
-    /// Initialize the loader to download the provided URL storing it into
-    /// a file at the `into` path, assuming the data size of `size`.
-    ///
-    /// The underlying disk space will be allocated via
-    /// the  [`disk_space_allocation`] facilities, and the [`RandomAccessFile`]
-    /// will be used to interface with the filesystem.
-    pub fn with_size(
-        into: impl AsRef<Path>,
-        client: hyper::Client<C>,
-        uri: hyper::Uri,
-        total_size: ByteSize,
-        chunk_size: NonZeroByteSize,
-    ) -> Result<Self, anyhow::Error> {
-        let client = Arc::new(client);
-
-        let mut writer = OpenOptions::new()
-            .write(true)
-            .create(true)
-            .truncate(true)
-            .open(into)?;
-        disk_space_allocation::allocate(&mut writer, total_size)?;
-        let writer = RandomAccessFile::try_new(writer)?;
-
-        let chunker = quickload_chunker::Chunker {
-            chunk_size,
-            total_size,
-        };
-
-        Ok(Self {
-            client,
-            writer,
-            uri,
-            chunker,
-        })
-    }
+/// Initialize the file for use with the loader.
+///
+/// The underlying disk space will be allocated via
+/// the  [`disk_space_allocation`] facilities, and the [`RandomAccessFile`]
+/// will be used to interface with the filesystem.
+pub fn init_file(
+    into: impl AsRef<Path>,
+    total_size: ByteSize,
+) -> Result<RandomAccessFile, anyhow::Error> {
+    let mut writer = OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .open(into)?;
+    disk_space_allocation::allocate(&mut writer, total_size)?;
+    let writer = RandomAccessFile::try_new(writer)?;
+    Ok(writer)
 }
 
 impl<C, W> Loader<C, W>

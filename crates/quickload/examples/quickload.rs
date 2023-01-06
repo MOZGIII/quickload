@@ -1,6 +1,8 @@
 //! A simple CLI app that downloads the contents at a URL and saves it into
 //! a file.
 
+use std::sync::Arc;
+
 use quickload_loader::ByteSize;
 
 const CHUNK_SIZE: ByteSize = 4 * 1024 * 1024;
@@ -16,14 +18,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let https = hyper_tls::HttpsConnector::new();
     let client = hyper::Client::builder().build::<_, hyper::Body>(https);
     let url = url.parse()?;
-    let total_size = quickload_loader::Loader::detect_size(&client, &url).await?;
-    let loader = quickload_loader::Loader::with_size(
-        file_path,
-        client,
-        url,
+    let total_size = quickload_loader::detect_size(&client, &url).await?;
+    let writer = quickload_loader::init_file(file_path, total_size)?;
+    let chunker = quickload_chunker::Chunker {
         total_size,
-        CHUNK_SIZE.try_into().unwrap(),
-    )?;
+        chunk_size: CHUNK_SIZE.try_into().unwrap(),
+    };
+    let loader = quickload_loader::Loader {
+        writer,
+        client: Arc::new(client),
+        uri: url,
+        chunker,
+    };
     loader.run().await?;
 
     Ok(())
