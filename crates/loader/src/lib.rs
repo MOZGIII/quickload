@@ -134,6 +134,7 @@ where
             let client = Arc::clone(&client);
             let uri = uri.clone();
             tokio::spawn(async move {
+                // TODO: handle processing failures more gracefully
                 Self::process_range(client, uri, chunk, write_queue_tx)
                     .await
                     .unwrap();
@@ -196,8 +197,12 @@ where
                     completed_tx,
                 })
                 .await;
-            if let Err(err) = result {
-                panic!("unable to send write request: {}", err);
+            if let Err(mpsc::error::SendError(failed_request)) = result {
+                // We are unable to send a request to the write queue
+                // because the channel is closed.
+                // The disk writer must've terminated, so we clean up.
+                tracing::debug!(message = "unable to send write request", offset = %failed_request.pos);
+                anyhow::bail!("unable to post a request to a write queue");
             }
             completed_rx.await?;
             pos += len;
