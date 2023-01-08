@@ -11,6 +11,7 @@ use quickload_chunker::{CapturedChunk, Config};
 use quickload_disk_space_allocation as disk_space_allocation;
 use std::{fs::OpenOptions, num::NonZeroU64, path::Path, sync::Arc};
 use tokio::sync::{mpsc, oneshot, Semaphore};
+use tokio_util::sync::CancellationToken;
 
 /// The type we use for data size calculations.
 pub type ByteSize = u64;
@@ -40,9 +41,11 @@ pub struct Loader<C, W> {
     /// The chunk picker to define the strategy of picking the order of
     /// the chunks to download.
     pub chunker: quickload_chunker::Chunker<ChunkerConfig>,
-    /// Cancellation future.
-    /// When (if) resolves, the loading will be cancelled.
-    pub cancel: tokio::sync::oneshot::Receiver<()>,
+    /// Cancellation token.
+    /// When the cancellation it triggered, the [`Loader::run`] with gracefully terminate
+    /// the download process as soon as possible (even if the file is not fully downloaded or
+    /// written).
+    pub cancel: CancellationToken,
 }
 
 /// Issue an HTTP request with a HEAD method to the URL you need
@@ -222,13 +225,12 @@ where
     async fn write_loop(
         mut writer: W,
         mut queue: mpsc::Receiver<WriteRequest>,
-        mut cancel: oneshot::Receiver<()>,
+        cancel: CancellationToken,
     ) -> Result<(), anyhow::Error> {
         loop {
             let maybe_item = tokio::select! {
-                _ = &mut cancel => {
+                _ = cancel.cancelled() => {
                     queue.close();
-                    cancel.close();
                     break;
                 }
                 maybe_item = queue.recv() => maybe_item
