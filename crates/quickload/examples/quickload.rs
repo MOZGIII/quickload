@@ -10,6 +10,8 @@ const CHUNK_SIZE: ByteSize = 4 * 1024 * 1024; // 4 MB.
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    tracing_subscriber::fmt::init();
+
     quickload_disk_space_allocation::prepare_privileges()?;
 
     let mut args = std::env::args().skip(1);

@@ -192,7 +192,7 @@ where
             .headers()
             .get(http::header::CONTENT_RANGE)
             .ok_or_else(|| anyhow!("no content-range header in response"))?;
-        println!("{}", content_range.to_str()?);
+        tracing::info!(message = "loading data", content_range = %content_range.to_str()?);
 
         let mut body = res.into_body();
 
