@@ -1,3 +1,5 @@
+//! Windows-specific implementation.
+
 #![allow(unsafe_code)]
 
 use std::{
