@@ -24,12 +24,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         total_size,
         chunk_size: CHUNK_SIZE.try_into().unwrap(),
     };
+    let (cancel_tx, cancel_rx) = tokio::sync::oneshot::channel();
     let loader = quickload_loader::Loader {
         writer,
         client: Arc::new(client),
         uri: url,
         chunker,
+        cancel: cancel_rx,
     };
+
+    tokio::spawn(async move {
+        tokio::signal::ctrl_c().await.unwrap();
+        eprintln!("Got Ctrl+C, canceling");
+        drop(cancel_tx);
+    });
+
     loader.run().await?;
 
     Ok(())
