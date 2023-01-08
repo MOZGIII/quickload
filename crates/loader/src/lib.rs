@@ -1,7 +1,6 @@
 //! The quickload loader implementation.
 
 use anyhow::{anyhow, bail};
-use futures_util::poll;
 use hyper::{
     body::{Bytes, HttpBody},
     http,
@@ -121,14 +120,14 @@ where
 
         let (write_queue_tx, write_queue_rx) = mpsc::channel(16);
 
-        let mut writer_loop_handle = tokio::spawn(Self::write_loop(writer, write_queue_rx, cancel));
+        let writer_loop_handle = tokio::spawn(Self::write_loop(writer, write_queue_rx, cancel));
 
         let chunk_picker = quickload_linear_chunk_picker::Linear::new(&chunker);
 
         let sem = Arc::new(Semaphore::new(8));
         for chunk in chunk_picker {
             // If the writer loop exited - we quit too.
-            if poll!(&mut writer_loop_handle).is_ready() {
+            if writer_loop_handle.is_finished() {
                 break;
             };
 
