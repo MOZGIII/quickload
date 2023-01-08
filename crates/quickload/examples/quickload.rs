@@ -5,7 +5,8 @@ use std::sync::Arc;
 
 use quickload_loader::ByteSize;
 
-const CHUNK_SIZE: ByteSize = 4 * 1024 * 1024;
+/// The sample chunk size.
+const CHUNK_SIZE: ByteSize = 4 * 1024 * 1024; // 4 MB.
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
