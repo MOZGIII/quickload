@@ -7,14 +7,14 @@ use std::{
 
 /// A no-op.
 #[inline]
-pub(super) fn prepare_privileges() -> Result<(), anyhow::Error> {
+pub(super) fn prepare_privileges() -> Result<(), std::io::Error> {
     // NOOP
     Ok(())
 }
 
 /// Allocate the disk space by writing to the very end of the file.
 #[inline]
-pub(super) fn allocate(file: &mut File, len: u64) -> Result<(), anyhow::Error> {
+pub(super) fn allocate(file: &mut File, len: u64) -> Result<(), std::io::Error> {
     // Compute the position one byte behind the desired end of the file.
     let Some(pre_end_pos) = len.checked_sub(1) else {
         return Ok(())
