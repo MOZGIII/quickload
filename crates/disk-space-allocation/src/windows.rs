@@ -26,8 +26,8 @@ use winapi::{
     },
 };
 
-// A wrapper around a HANDLE that automatically closes.
-pub(super) struct Handle(HANDLE);
+/// A wrapper around a HANDLE that automatically closes.
+struct Handle(HANDLE);
 
 impl Handle {
     /// Create an null handle.
@@ -64,6 +64,7 @@ impl Drop for Handle {
     }
 }
 
+/// Request the required priviliges.
 #[inline]
 pub(super) fn prepare_privileges() -> Result<(), anyhow::Error> {
     let mut current_process_token = Handle::null();
@@ -102,6 +103,7 @@ pub(super) fn prepare_privileges() -> Result<(), anyhow::Error> {
     Ok(())
 }
 
+/// Allocate disk space with Windows specifics.
 #[inline]
 pub(super) fn allocate(file: &mut File, len: u64) -> Result<(), anyhow::Error> {
     // Aim at the desired end of the file while recording the previous
@@ -126,6 +128,7 @@ pub(super) fn allocate(file: &mut File, len: u64) -> Result<(), anyhow::Error> {
     Ok(())
 }
 
+/// Interpret the result of a system API call.
 fn cvt(i: BOOL) -> std::io::Result<BOOL> {
     if i == 0 {
         Err(std::io::Error::last_os_error())
