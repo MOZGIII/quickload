@@ -150,6 +150,8 @@ where
         Ok(())
     }
 
+    /// Process the given chunk by issuing a data download request, and then submitting the data
+    /// received from the request to the disk writing queue.
     async fn process_range(
         client: Arc<hyper::Client<C>>,
         uri: hyper::Uri,
@@ -216,6 +218,7 @@ where
         Ok(())
     }
 
+    /// Run the disk write loop, serving the write queue requests and writing the data to the disk.
     async fn write_loop(
         mut writer: W,
         mut queue: mpsc::Receiver<WriteRequest>,
@@ -239,15 +242,28 @@ where
                 completed_tx,
             } = item;
             tokio::task::block_in_place(|| writer.write_all_at(pos, buf.as_ref()))?;
-            completed_tx.send(()).unwrap();
+
+            let completion_notification_result = completed_tx.send(());
+            if let Err(()) = completion_notification_result {
+                // We were unable to issue a write completion notification to the write requester
+                // because the channel has been closed (or already used).
+                // This is no big deal, we'll just log it and continue serving the queue.
+                tracing::debug!(message = "unable to send a write completion notification");
+            }
         }
         tokio::task::block_in_place(|| writer.flush())?;
         Ok(())
     }
 }
 
+/// The request for writing the data into a file.
+/// This is a private implementation detail of the interation between the chunk processing logic
+/// and the write loop.
 struct WriteRequest {
+    /// The offset in the file.
     pos: u64,
+    /// The data to write at the given offset.
     buf: Bytes,
+    /// A channel to notify the chunk loader about the completion.
     completed_tx: oneshot::Sender<()>,
 }

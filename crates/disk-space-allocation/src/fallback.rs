@@ -1,14 +1,18 @@
+//! The fallback implementation.
+
 use std::{
     fs::File,
     io::{Seek, SeekFrom, Write},
 };
 
+/// A no-op.
 #[inline]
 pub(super) fn prepare_privileges() -> Result<(), anyhow::Error> {
     // NOOP
     Ok(())
 }
 
+/// Allocate the disk space by writing to the very end of the file.
 #[inline]
 pub(super) fn allocate(file: &mut File, len: u64) -> Result<(), anyhow::Error> {
     // Compute the position one byte behind the desired end of the file.

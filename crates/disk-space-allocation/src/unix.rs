@@ -1,12 +1,18 @@
+//! Unix-specific implementation.
+//! Might not work for all UNIX-es, in that case write another specialized implementation or just
+//! use fallback.
+
 use nix::fcntl::{fallocate, FallocateFlags};
 use std::{convert::TryInto, fs::File, os::unix::io::AsRawFd};
 
+/// A no-op.
 #[inline]
 pub(super) fn prepare_privileges() -> Result<(), anyhow::Error> {
     // NOOP
     Ok(())
 }
 
+/// Allocate the disk space by using [`fallocate`].
 #[inline]
 pub(super) fn allocate(file: &mut File, len: u64) -> Result<(), anyhow::Error> {
     fallocate(

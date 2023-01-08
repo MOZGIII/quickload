@@ -64,9 +64,7 @@ mod tests {
         type ChunkIndex = u64;
     }
 
-    fn test<'a>(chunker: Chunker<TestConfig>, expected: &[(u64, u64)]) {
-        let expected: Vec<(u64, u64)> = expected.iter().copied().collect();
-
+    fn test(chunker: Chunker<TestConfig>, expected: &[(u64, u64)]) {
         let picker = Linear::new(&chunker);
         let actual: Vec<(u64, u64)> = picker
             .map(|chunk| (chunk.first_byte_offset, chunk.last_byte_offset))
