@@ -132,8 +132,9 @@ where
 
         let sem = Arc::new(Semaphore::new(8));
         for chunk in chunk_picker {
-            // If the writer loop exited - we quit too.
-            if writer_loop_handle.is_finished() {
+            // If the writer queue is closed we can safely quit - there is no way we can submit
+            // more data to write, so why bother loading it.
+            if write_queue_tx.is_closed() {
                 break;
             };
 
