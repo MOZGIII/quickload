@@ -19,7 +19,7 @@ cfg_if::cfg_if! {
 /// operations.
 ///
 /// Heavily platform-dependent, might be a no-op.
-pub fn prepare_privileges() -> Result<(), anyhow::Error> {
+pub fn prepare_privileges() -> Result<(), std::io::Error> {
     implementation::prepare_privileges()
 }
 
@@ -33,6 +33,6 @@ pub fn prepare_privileges() -> Result<(), anyhow::Error> {
 /// random access fashion, yet those write to have a higher chance to not
 /// result in a set of fragmented stripes on disk, but rather in
 /// a single linear blob.
-pub fn allocate(file: &mut File, len: u64) -> Result<(), anyhow::Error> {
+pub fn allocate(file: &mut File, len: u64) -> Result<(), std::io::Error> {
     implementation::allocate(file, len)
 }

@@ -66,7 +66,7 @@ impl Drop for Handle {
 
 /// Request the required priviliges.
 #[inline]
-pub(super) fn prepare_privileges() -> Result<(), anyhow::Error> {
+pub(super) fn prepare_privileges() -> Result<(), std::io::Error> {
     let mut current_process_token = Handle::null();
 
     cvt(unsafe {
@@ -105,7 +105,7 @@ pub(super) fn prepare_privileges() -> Result<(), anyhow::Error> {
 
 /// Allocate disk space with Windows specifics.
 #[inline]
-pub(super) fn allocate(file: &mut File, len: u64) -> Result<(), anyhow::Error> {
+pub(super) fn allocate(file: &mut File, len: u64) -> Result<(), std::io::Error> {
     // Aim at the desired end of the file while recording the previous
     // seek position.
     let current_pos = file.seek(SeekFrom::Start(len))?;
