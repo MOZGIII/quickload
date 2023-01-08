@@ -40,6 +40,9 @@ pub struct Loader<C, W> {
     /// The chunk picker to define the strategy of picking the order of
     /// the chunks to download.
     pub chunker: quickload_chunker::Chunker<ChunkerConfig>,
+    /// Cancellation future.
+    /// When (if) resolves, the loading will be cancelled.
+    pub cancel: tokio::sync::oneshot::Receiver<()>,
 }
 
 /// Issue an HTTP request with a HEAD method to the URL you need
@@ -110,11 +113,12 @@ where
             chunker,
             uri,
             writer,
+            cancel,
         } = self;
 
         let (write_queue_tx, write_queue_rx) = mpsc::channel(16);
 
-        let mut writer_loop_handle = tokio::spawn(Self::write_loop(writer, write_queue_rx));
+        let mut writer_loop_handle = tokio::spawn(Self::write_loop(writer, write_queue_rx, cancel));
 
         let chunk_picker = quickload_linear_chunk_picker::Linear::new(&chunker);
 
@@ -130,6 +134,7 @@ where
             let client = Arc::clone(&client);
             let uri = uri.clone();
             tokio::spawn(async move {
+                // TODO: handle processing failures more gracefully
                 Self::process_range(client, uri, chunk, write_queue_tx)
                     .await
                     .unwrap();
@@ -192,8 +197,12 @@ where
                     completed_tx,
                 })
                 .await;
-            if let Err(err) = result {
-                panic!("unable to send write request: {}", err);
+            if let Err(mpsc::error::SendError(failed_request)) = result {
+                // We are unable to send a request to the write queue
+                // because the channel is closed.
+                // The disk writer must've terminated, so we clean up.
+                tracing::debug!(message = "unable to send write request", offset = %failed_request.pos);
+                anyhow::bail!("unable to post a request to a write queue");
             }
             completed_rx.await?;
             pos += len;
@@ -210,8 +219,20 @@ where
     async fn write_loop(
         mut writer: W,
         mut queue: mpsc::Receiver<WriteRequest>,
+        mut cancel: oneshot::Receiver<()>,
     ) -> Result<(), anyhow::Error> {
-        while let Some(item) = queue.recv().await {
+        loop {
+            let maybe_item = tokio::select! {
+                _ = &mut cancel => {
+                    queue.close();
+                    cancel.close();
+                    break;
+                }
+                maybe_item = queue.recv() => maybe_item
+            };
+            let Some(item) = maybe_item else {
+                break;
+            };
             let WriteRequest {
                 buf,
                 pos,
