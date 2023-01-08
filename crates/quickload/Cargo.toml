@@ -12,6 +12,7 @@ quickload-disk-space-allocation = { path = "../disk-space-allocation" }
 quickload-loader = { path = "../loader" }
 
 anyhow = "1.0"
+clap = { version = "4", features = ["derive"] }
 hyper = "0.14"
 hyper-tls = "0.5"
 tokio = { version = "1", features = ["macros", "signal"] }

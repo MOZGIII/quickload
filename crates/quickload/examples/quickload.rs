@@ -3,20 +3,32 @@
 
 use std::sync::Arc;
 
-use quickload_loader::ByteSize;
+use clap::Parser;
+use quickload_loader::NonZeroByteSize;
 
-/// The sample chunk size.
-const CHUNK_SIZE: ByteSize = 4 * 1024 * 1024; // 4 MB.
+/// The CLI app.
+#[derive(Debug, Parser)]
+struct Cli {
+    /// The URL to download.
+    pub url: String,
+    /// The file path to save the downloaded data as.
+    pub file_path: String,
+    /// The chunk size to use.
+    #[clap(long, default_value = "4194304" /* 1024 * 1024 = 4 MB */)]
+    pub chunk_size: NonZeroByteSize,
+}
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing_subscriber::fmt::init();
 
-    quickload_disk_space_allocation::prepare_privileges()?;
+    let Cli {
+        url,
+        file_path,
+        chunk_size,
+    } = Cli::parse();
 
-    let mut args = std::env::args().skip(1);
-    let url = args.next().ok_or("pass url as a first argument")?;
-    let file_path = args.next().ok_or("pass file path as a second argument")?;
+    quickload_disk_space_allocation::prepare_privileges()?;
 
     let https = hyper_tls::HttpsConnector::new();
     let client = hyper::Client::builder().build::<_, hyper::Body>(https);
@@ -25,7 +37,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let writer = quickload_loader::init_file(file_path, total_size)?;
     let chunker = quickload_chunker::Chunker {
         total_size,
-        chunk_size: CHUNK_SIZE.try_into().unwrap(),
+        chunk_size,
     };
     let cancel = tokio_util::sync::CancellationToken::new();
     let loader = quickload_loader::Loader {
