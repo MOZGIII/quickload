@@ -1,7 +1,6 @@
 //! The quickload loader implementation.
 
 use anyhow::{anyhow, bail};
-use futures_util::poll;
 use hyper::{
     body::{Bytes, HttpBody},
     http,
@@ -121,14 +120,21 @@ where
 
         let (write_queue_tx, write_queue_rx) = mpsc::channel(16);
 
-        let mut writer_loop_handle = tokio::spawn(Self::write_loop(writer, write_queue_rx, cancel));
+        let writer_loop_handle = tokio::spawn(Self::write_loop(
+            writer,
+            write_queue_rx,
+            cancel,
+            // TODO: expose this to be usable
+            CancellationToken::new(),
+        ));
 
         let chunk_picker = quickload_linear_chunk_picker::Linear::new(&chunker);
 
         let sem = Arc::new(Semaphore::new(8));
         for chunk in chunk_picker {
-            // If the writer loop exited - we quit too.
-            if poll!(&mut writer_loop_handle).is_ready() {
+            // If the writer queue is closed we can safely quit - there is no way we can submit
+            // more data to write, so why bother loading it.
+            if write_queue_tx.is_closed() {
                 break;
             };
 
@@ -225,13 +231,26 @@ where
     async fn write_loop(
         mut writer: W,
         mut queue: mpsc::Receiver<WriteRequest>,
-        cancel: CancellationToken,
+        // Close the queue put process all remanining write requests.
+        cancel_gacefully: CancellationToken,
+        // Drop the queue discarding all remaining write requests.
+        cancel_flush_only: CancellationToken,
     ) -> Result<(), anyhow::Error> {
+        let mut is_cancelling_gracefully = false;
         loop {
             let maybe_item = tokio::select! {
-                _ = cancel.cancelled() => {
-                    queue.close();
+                _ = cancel_flush_only.cancelled() => {
+                    // Drop the queue, break the loop and go into flush.
+                    drop(queue);
                     break;
+                }
+                _ = cancel_gacefully.cancelled(), if !is_cancelling_gracefully => {
+                    // Mark that we don't need to poll for graceful cancellation anymore as
+                    // it completes immediately when already cancelled, close the queue and
+                    // continue with the loop processing the remaining write requests.
+                    is_cancelling_gracefully = true;
+                    queue.close();
+                    continue;
                 }
                 maybe_item = queue.recv() => maybe_item
             };
