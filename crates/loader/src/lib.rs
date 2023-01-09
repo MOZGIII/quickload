@@ -29,24 +29,6 @@ impl Config for ChunkerConfig {
     type Offset = ByteSize;
 }
 
-/// The loader.
-pub struct Loader<C, W> {
-    /// A hyper client we can share across multiple threads.
-    pub client: Arc<hyper::Client<C>>,
-    /// The the URL to download.
-    pub uri: hyper::Uri,
-    /// The write to write to (file for instance).
-    pub writer: W,
-    /// The chunk picker to define the strategy of picking the order of
-    /// the chunks to download.
-    pub chunker: quickload_chunker::Chunker<ChunkerConfig>,
-    /// Cancellation token.
-    /// When the cancellation it triggered, the [`Loader::run`] with gracefully terminate
-    /// the download process as soon as possible (even if the file is not fully downloaded or
-    /// written).
-    pub cancel: CancellationToken,
-}
-
 /// Issue an HTTP request with a HEAD method to the URL you need
 /// to download and attempt to detect the size of the data to accomodate.
 pub async fn detect_size<C>(
@@ -103,6 +85,29 @@ pub fn init_file(
     Ok(writer)
 }
 
+/// The loader.
+///
+/// # Cancellation
+///
+/// When the cancellation it triggered vie any of the cancellation tokens, the [`Loader::run`] will
+/// gracefully terminate the download process as soon as possible (even if the file is not fully
+/// downloaded or written).
+pub struct Loader<C, W> {
+    /// A hyper client we can share across multiple threads.
+    pub client: Arc<hyper::Client<C>>,
+    /// The the URL to download.
+    pub uri: hyper::Uri,
+    /// The write to write to (file for instance).
+    pub writer: W,
+    /// The chunk picker to define the strategy of picking the order of
+    /// the chunks to download.
+    pub chunker: quickload_chunker::Chunker<ChunkerConfig>,
+    /// Cancellation token for terminating after the queued write requests are fulfilled.
+    pub cancel_write_queued: CancellationToken,
+    /// Cancellation token for terminating quick and dropping the pending write requests.
+    pub cancel_drop_queued: CancellationToken,
+}
+
 impl<C, W> Loader<C, W>
 where
     C: hyper::client::connect::Connect + Clone + Send + Sync + 'static,
@@ -115,7 +120,8 @@ where
             chunker,
             uri,
             writer,
-            cancel,
+            cancel_write_queued,
+            cancel_drop_queued,
         } = self;
 
         let (write_queue_tx, write_queue_rx) = mpsc::channel(16);
@@ -124,9 +130,8 @@ where
             let result = Self::write_loop(
                 writer,
                 write_queue_rx,
-                cancel,
-                // TODO: expose this to be usable
-                CancellationToken::new(),
+                cancel_write_queued,
+                cancel_drop_queued,
             )
             .await;
             if let Err(error) = result {

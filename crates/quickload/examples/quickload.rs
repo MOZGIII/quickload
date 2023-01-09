@@ -39,19 +39,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         total_size,
         chunk_size,
     };
-    let cancel = tokio_util::sync::CancellationToken::new();
+    let cancel_write_queued = tokio_util::sync::CancellationToken::new();
+    let cancel_drop_queued = tokio_util::sync::CancellationToken::new();
     let loader = quickload_loader::Loader {
         writer,
         client: Arc::new(client),
         uri: url,
         chunker,
-        cancel: cancel.clone(),
+        cancel_write_queued: cancel_write_queued.clone(),
+        cancel_drop_queued: cancel_drop_queued.clone(),
     };
 
     tokio::spawn(async move {
         tokio::signal::ctrl_c().await.unwrap();
         eprintln!("Got Ctrl+C, canceling");
-        cancel.cancel();
+        cancel_write_queued.cancel();
+        tokio::signal::ctrl_c().await.unwrap();
+        eprintln!("Got Ctrl+C again, canceling with dropping the write queue");
+        cancel_drop_queued.cancel();
     });
 
     loader.run().await?;
