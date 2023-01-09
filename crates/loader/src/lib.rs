@@ -187,7 +187,16 @@ where
             .header(hyper::header::RANGE, range_header)
             .body(hyper::Body::empty())?;
 
-        let res = client.request(req).await?;
+        if write_queue.is_closed() {
+            anyhow::bail!("write queue closed, bailing on issuing the request");
+        }
+
+        let res = tokio::select! {
+            _ = write_queue.closed() => {
+                anyhow::bail!("write queue closed, bailing on completing the request");
+            }
+            request_result = client.request(req) => request_result?,
+        };
         let status = res.status();
         anyhow::ensure!(
             status == http::StatusCode::PARTIAL_CONTENT,
@@ -204,8 +213,20 @@ where
         let mut body = res.into_body();
 
         let mut pos = first_byte_offset;
-        while let Some(data) = body.data().await {
-            let data = data?;
+        loop {
+            let data_read_result = tokio::select! {
+                _ = write_queue.closed() => {
+                    anyhow::bail!("write queue closed, bailing on loading more data");
+                }
+                maybe_data = body.data() => {
+                    match maybe_data {
+                        Some(data) => data,
+                        None => break,
+                    }
+                }
+            };
+
+            let data = data_read_result?;
             let len = data.len() as ByteSize;
             let (completed_tx, completed_rx) = oneshot::channel();
             let result = write_queue
