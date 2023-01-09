@@ -153,7 +153,7 @@ where
         }
 
         drop(write_queue_tx);
-        writer_loop_handle.await??;
+        writer_loop_handle.await.unwrap()?;
 
         // Wait for the gaceful termination of all the chunk processing routines.
         while let Some(chunk_processing_result) = chunk_processing_set.join_next().await {
