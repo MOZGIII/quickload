@@ -120,13 +120,19 @@ where
 
         let (write_queue_tx, write_queue_rx) = mpsc::channel(16);
 
-        let writer_loop_handle = tokio::spawn(Self::write_loop(
-            writer,
-            write_queue_rx,
-            cancel,
-            // TODO: expose this to be usable
-            CancellationToken::new(),
-        ));
+        let writer_loop_handle = tokio::spawn(async move {
+            let result = Self::write_loop(
+                writer,
+                write_queue_rx,
+                cancel,
+                // TODO: expose this to be usable
+                CancellationToken::new(),
+            )
+            .await;
+            if let Err(error) = result {
+                tracing::error!(message = "write loop error", ?error);
+            }
+        });
 
         let chunk_picker = quickload_linear_chunk_picker::Linear::new(&chunker);
 
@@ -152,8 +158,12 @@ where
             });
         }
 
+        // The chunk loading routine has finished, so we can stop holding for the write queue tx as
+        // we won't be posting any more work to it.
         drop(write_queue_tx);
-        writer_loop_handle.await.unwrap()?;
+
+        // Wait for the write loop to finish and propagate the panic (if any).
+        writer_loop_handle.await.unwrap();
 
         // Wait for the gaceful termination of all the chunk processing routines.
         while let Some(chunk_processing_result) = chunk_processing_set.join_next().await {
