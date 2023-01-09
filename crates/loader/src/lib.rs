@@ -131,6 +131,7 @@ where
         let chunk_picker = quickload_linear_chunk_picker::Linear::new(&chunker);
 
         let sem = Arc::new(Semaphore::new(8));
+        let mut chunk_processing_set = tokio::task::JoinSet::new();
         for chunk in chunk_picker {
             // If the writer queue is closed we can safely quit - there is no way we can submit
             // more data to write, so why bother loading it.
@@ -142,7 +143,7 @@ where
             let write_queue_tx = write_queue_tx.clone();
             let client = Arc::clone(&client);
             let uri = uri.clone();
-            tokio::spawn(async move {
+            chunk_processing_set.spawn(async move {
                 let result = Self::process_range(client, uri, chunk, write_queue_tx).await;
                 drop(permit);
                 if let Err(error) = result {
@@ -153,6 +154,12 @@ where
 
         drop(write_queue_tx);
         writer_loop_handle.await??;
+
+        // Wait for the gaceful termination of all the chunk processing routines.
+        while let Some(chunk_processing_result) = chunk_processing_set.join_next().await {
+            // Propagate the panics, if any.
+            chunk_processing_result.unwrap();
+        }
 
         drop(client);
 
