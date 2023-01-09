@@ -143,11 +143,11 @@ where
             let client = Arc::clone(&client);
             let uri = uri.clone();
             tokio::spawn(async move {
-                // TODO: handle processing failures more gracefully
-                Self::process_range(client, uri, chunk, write_queue_tx)
-                    .await
-                    .unwrap();
+                let result = Self::process_range(client, uri, chunk, write_queue_tx).await;
                 drop(permit);
+                if let Err(error) = result {
+                    tracing::error!(message = "chunk processing error", ?error, ?chunk);
+                }
             });
         }
 
