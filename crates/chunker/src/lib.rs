@@ -4,6 +4,8 @@ use std::fmt::Debug;
 
 mod traits;
 
+use derivative::Derivative;
+
 use self::traits::{BoundedBy, FirstToLastByteOfChunk, LastValidOffset, OffsetFromChunkSize};
 
 /// A chunker config.
@@ -86,7 +88,8 @@ impl<C: Config> Chunker<C> {
 /// The captured chunk information.
 ///
 /// Useful for when you need to compute the offsets just once and cache them.
-#[derive(Debug, Clone, Copy)]
+#[derive(Derivative)]
+#[derivative(Debug, Clone, Copy)]
 pub struct CapturedChunk<C: Config> {
     /// The index of the chunk.
     pub index: C::ChunkIndex,

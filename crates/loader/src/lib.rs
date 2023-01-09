@@ -120,17 +120,24 @@ where
 
         let (write_queue_tx, write_queue_rx) = mpsc::channel(16);
 
-        let writer_loop_handle = tokio::spawn(Self::write_loop(
-            writer,
-            write_queue_rx,
-            cancel,
-            // TODO: expose this to be usable
-            CancellationToken::new(),
-        ));
+        let writer_loop_handle = tokio::spawn(async move {
+            let result = Self::write_loop(
+                writer,
+                write_queue_rx,
+                cancel,
+                // TODO: expose this to be usable
+                CancellationToken::new(),
+            )
+            .await;
+            if let Err(error) = result {
+                tracing::error!(message = "write loop error", ?error);
+            }
+        });
 
         let chunk_picker = quickload_linear_chunk_picker::Linear::new(&chunker);
 
         let sem = Arc::new(Semaphore::new(8));
+        let mut chunk_processing_set = tokio::task::JoinSet::new();
         for chunk in chunk_picker {
             // If the writer queue is closed we can safely quit - there is no way we can submit
             // more data to write, so why bother loading it.
@@ -142,17 +149,27 @@ where
             let write_queue_tx = write_queue_tx.clone();
             let client = Arc::clone(&client);
             let uri = uri.clone();
-            tokio::spawn(async move {
-                // TODO: handle processing failures more gracefully
-                Self::process_range(client, uri, chunk, write_queue_tx)
-                    .await
-                    .unwrap();
+            chunk_processing_set.spawn(async move {
+                let result = Self::process_chunk(client, uri, chunk, write_queue_tx).await;
                 drop(permit);
+                if let Err(error) = result {
+                    tracing::error!(message = "chunk processing error", ?error, ?chunk);
+                }
             });
         }
 
+        // The chunk loading routine has finished, so we can stop holding for the write queue tx as
+        // we won't be posting any more work to it.
         drop(write_queue_tx);
-        writer_loop_handle.await??;
+
+        // Wait for the write loop to finish and propagate the panic (if any).
+        writer_loop_handle.await.unwrap();
+
+        // Wait for the gaceful termination of all the chunk processing routines.
+        while let Some(chunk_processing_result) = chunk_processing_set.join_next().await {
+            // Propagate the panics, if any.
+            chunk_processing_result.unwrap();
+        }
 
         drop(client);
 
@@ -161,7 +178,7 @@ where
 
     /// Process the given chunk by issuing a data download request, and then submitting the data
     /// received from the request to the disk writing queue.
-    async fn process_range(
+    async fn process_chunk(
         client: Arc<hyper::Client<C>>,
         uri: hyper::Uri,
         chunk: quickload_chunker::CapturedChunk<ChunkerConfig>,
@@ -180,7 +197,16 @@ where
             .header(hyper::header::RANGE, range_header)
             .body(hyper::Body::empty())?;
 
-        let res = client.request(req).await?;
+        if write_queue.is_closed() {
+            anyhow::bail!("write queue closed, bailing on issuing the request");
+        }
+
+        let res = tokio::select! {
+            _ = write_queue.closed() => {
+                anyhow::bail!("write queue closed, bailing on completing the request");
+            }
+            request_result = client.request(req) => request_result?,
+        };
         let status = res.status();
         anyhow::ensure!(
             status == http::StatusCode::PARTIAL_CONTENT,
@@ -197,8 +223,20 @@ where
         let mut body = res.into_body();
 
         let mut pos = first_byte_offset;
-        while let Some(data) = body.data().await {
-            let data = data?;
+        loop {
+            let data_read_result = tokio::select! {
+                _ = write_queue.closed() => {
+                    anyhow::bail!("write queue closed, bailing on loading more data");
+                }
+                maybe_data = body.data() => {
+                    match maybe_data {
+                        Some(data) => data,
+                        None => break,
+                    }
+                }
+            };
+
+            let data = data_read_result?;
             let len = data.len() as ByteSize;
             let (completed_tx, completed_rx) = oneshot::channel();
             let result = write_queue
