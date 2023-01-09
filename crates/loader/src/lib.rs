@@ -144,7 +144,7 @@ where
             let client = Arc::clone(&client);
             let uri = uri.clone();
             chunk_processing_set.spawn(async move {
-                let result = Self::process_range(client, uri, chunk, write_queue_tx).await;
+                let result = Self::process_chunk(client, uri, chunk, write_queue_tx).await;
                 drop(permit);
                 if let Err(error) = result {
                     tracing::error!(message = "chunk processing error", ?error, ?chunk);
@@ -168,7 +168,7 @@ where
 
     /// Process the given chunk by issuing a data download request, and then submitting the data
     /// received from the request to the disk writing queue.
-    async fn process_range(
+    async fn process_chunk(
         client: Arc<hyper::Client<C>>,
         uri: hyper::Uri,
         chunk: quickload_chunker::CapturedChunk<ChunkerConfig>,
