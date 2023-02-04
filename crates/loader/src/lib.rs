@@ -8,25 +8,20 @@ use hyper::{
 use positioned_io_preview::RandomAccessFile;
 use quickload_chunker::{CapturedChunk, Config};
 use quickload_disk_space_allocation as disk_space_allocation;
-use std::{fs::OpenOptions, num::NonZeroU64, path::Path, sync::Arc};
+use std::{fs::OpenOptions, path::Path, sync::Arc};
 use tokio::sync::{mpsc, oneshot, Semaphore};
 use tokio_util::sync::CancellationToken;
 
 /// The type we use for data size calculations.
 pub type ByteSize = u64;
 
-/// The type we use for chunk size.
-pub type NonZeroByteSize = NonZeroU64;
-
 /// The config type for the chunker.
 #[derive(Debug)]
 pub enum ChunkerConfig {}
 
 impl Config for ChunkerConfig {
-    type ChunkIndex = u64;
-    type TotalSize = ByteSize;
-    type ChunkSize = NonZeroByteSize;
-    type Offset = ByteSize;
+    type ChunkSpaceUnit = u64;
+    type ByteSpaceUnit = ByteSize;
 }
 
 /// Issue an HTTP request with a HEAD method to the URL you need
