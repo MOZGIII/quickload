@@ -4,14 +4,19 @@ use std::{fmt::Debug, num::NonZeroU64};
 
 mod utils;
 
-/// The type for total size to the byte space.
-pub type TotalSize = u64;
+/// The type for a size in the bytes space.
+pub type Size = u64;
+/// The type for a size in the bytes space, for when the zero size is not acceptable.
+pub type NonZeroSize = NonZeroU64;
+/// The type for an offset in the bytes space.
+pub type Offset = u64;
+
+/// The type for the total size of the bytes space.
+pub type TotalSize = Size;
 /// The type for a size of a signle chunk.
-pub type ChunkSize = NonZeroU64;
+pub type ChunkSize = NonZeroSize;
 /// The type for a size of the chunk index.
 pub type ChunkIndex = u64;
-/// The type for an offset in the byte space.
-pub type Offset = u64;
 
 /// The chunker can split an abstract linear bytes space into equally-sized
 /// (except for the last one) chunks.

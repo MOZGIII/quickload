@@ -6,7 +6,7 @@ use hyper::{
     http,
 };
 use positioned_io_preview::RandomAccessFile;
-use quickload_chunker::{CapturedChunk, TotalSize};
+use quickload_chunker::{CapturedChunk, Offset, Size, TotalSize};
 use quickload_disk_space_allocation as disk_space_allocation;
 use std::{fs::OpenOptions, path::Path, sync::Arc};
 use tokio::sync::{mpsc, oneshot, Semaphore};
@@ -17,7 +17,7 @@ use tokio_util::sync::CancellationToken;
 pub async fn detect_size<C>(
     client: &hyper::Client<C>,
     uri: &hyper::Uri,
-) -> Result<TotalSize, anyhow::Error>
+) -> Result<Size, anyhow::Error>
 where
     C: hyper::client::connect::Connect + Clone + Send + Sync + 'static,
 {
@@ -225,7 +225,7 @@ where
             };
 
             let data = data_read_result?;
-            let len = data.len() as TotalSize;
+            let len = data.len() as Size;
             let (completed_tx, completed_rx) = oneshot::channel();
             let result = write_queue
                 .send(WriteRequest {
@@ -308,7 +308,7 @@ where
 /// and the write loop.
 struct WriteRequest {
     /// The offset in the file.
-    pos: u64,
+    pos: Offset,
     /// The data to write at the given offset.
     buf: Bytes,
     /// A channel to notify the chunk loader about the completion.
