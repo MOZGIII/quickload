@@ -7,7 +7,5 @@ edition = "2021"
 [dependencies]
 quickload-chunker = { path = "../chunker" }
 
-num-traits = "0.2"
-
 [dev-dependencies]
 pretty_assertions = "1.3"
