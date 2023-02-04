@@ -14,12 +14,12 @@ pub struct Linear<'a, C: Config> {
     /// The chunker to use for generating chunks.
     chunker: &'a Chunker<C>,
     /// The index of the next chunk.
-    index: C::ChunkIndex,
+    index: C::ChunkSpaceUnit,
 }
 
 impl<'a, C: Config> Linear<'a, C>
 where
-    C::ChunkIndex: num_traits::Zero,
+    C::ChunkSpaceUnit: num_traits::Zero,
 {
     /// Create a new [`Linear`].
     pub fn new(chunker: &'a Chunker<C>) -> Self {
@@ -32,7 +32,7 @@ where
 
 impl<'a, C: Config> Iterator for Linear<'a, C>
 where
-    C::ChunkIndex: Copy + crate::traits::CheckedIncrement,
+    C::ChunkSpaceUnit: Copy + crate::traits::CheckedIncrement,
 {
     type Item = CapturedChunk<C>;
 
@@ -50,7 +50,6 @@ mod tests {
     use super::Linear;
     use crate::{Chunker, Config};
     use pretty_assertions::assert_eq;
-    use std::num::NonZeroU64;
 
     const CHUNK_SIZE: u64 = 512 * 1024;
 
@@ -58,10 +57,8 @@ mod tests {
     struct TestConfig;
 
     impl Config for TestConfig {
-        type TotalSize = u64;
-        type ChunkSize = NonZeroU64;
-        type Offset = u64;
-        type ChunkIndex = u64;
+        type ByteSpaceUnit = u64;
+        type ChunkSpaceUnit = u64;
     }
 
     fn test(chunker: Chunker<TestConfig>, expected: &[(u64, u64)]) {
