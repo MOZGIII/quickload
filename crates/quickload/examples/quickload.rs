@@ -4,7 +4,7 @@
 use std::sync::Arc;
 
 use clap::Parser;
-use quickload_loader::ByteSize;
+use quickload_chunker::ChunkSize;
 
 /// The CLI app.
 #[derive(Debug, Parser)]
@@ -15,7 +15,7 @@ struct Cli {
     pub file_path: String,
     /// The chunk size to use.
     #[clap(long, default_value = "4194304" /* 1024 * 1024 = 4 MB */)]
-    pub chunk_size: ByteSize,
+    pub chunk_size: ChunkSize,
 }
 
 #[tokio::main]

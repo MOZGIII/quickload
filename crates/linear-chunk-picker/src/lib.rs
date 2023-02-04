@@ -1,44 +1,31 @@
 //! Linear chunk picker.
 
-use quickload_chunker::{CapturedChunk, Chunker, Config};
-
-mod traits;
-
-use self::traits::CheckedIncrement;
+use quickload_chunker::{CapturedChunk, ChunkIndex, Chunker};
 
 /// The linear chunk picker strategy.
 ///
 /// Selects the chunks one by one from the beginning of the range to the end.
 #[derive(Debug)]
-pub struct Linear<'a, C: Config> {
+pub struct Linear<'a> {
     /// The chunker to use for generating chunks.
-    chunker: &'a Chunker<C>,
+    chunker: &'a Chunker,
     /// The index of the next chunk.
-    index: C::ChunkSpaceUnit,
+    index: ChunkIndex,
 }
 
-impl<'a, C: Config> Linear<'a, C>
-where
-    C::ChunkSpaceUnit: num_traits::Zero,
-{
+impl<'a> Linear<'a> {
     /// Create a new [`Linear`].
-    pub fn new(chunker: &'a Chunker<C>) -> Self {
-        Self {
-            chunker,
-            index: num_traits::zero(),
-        }
+    pub fn new(chunker: &'a Chunker) -> Self {
+        Self { chunker, index: 0 }
     }
 }
 
-impl<'a, C: Config> Iterator for Linear<'a, C>
-where
-    C::ChunkSpaceUnit: Copy + crate::traits::CheckedIncrement,
-{
-    type Item = CapturedChunk<C>;
+impl<'a> Iterator for Linear<'a> {
+    type Item = CapturedChunk;
 
     fn next(&mut self) -> Option<Self::Item> {
         let chunk = self.chunker.capture_chunk(self.index).ok()?;
-        self.index = self.index.checked_inc()?;
+        self.index += 1;
         Some(chunk)
     }
 }
@@ -48,20 +35,12 @@ mod tests {
     #![allow(clippy::erasing_op, clippy::identity_op)]
 
     use super::Linear;
-    use crate::{Chunker, Config};
+    use crate::Chunker;
     use pretty_assertions::assert_eq;
 
     const CHUNK_SIZE: u64 = 512 * 1024;
 
-    #[derive(Debug)]
-    struct TestConfig;
-
-    impl Config for TestConfig {
-        type ByteSpaceUnit = u64;
-        type ChunkSpaceUnit = u64;
-    }
-
-    fn test(chunker: Chunker<TestConfig>, expected: &[(u64, u64)]) {
+    fn test(chunker: Chunker, expected: &[(u64, u64)]) {
         let picker = Linear::new(&chunker);
         let actual: Vec<(u64, u64)> = picker
             .map(|chunk| (chunk.first_byte_offset, chunk.last_byte_offset))
@@ -70,7 +49,7 @@ mod tests {
         assert_eq!(actual, expected, "results don't match, expected is right");
     }
 
-    fn make_chunker(total_size: u64) -> Chunker<TestConfig> {
+    fn make_chunker(total_size: u64) -> Chunker {
         Chunker {
             total_size,
             chunk_size: CHUNK_SIZE.try_into().unwrap(),

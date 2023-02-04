@@ -1,49 +1,45 @@
 //! A notion of chunks and related utilities for quickload.
 
-use std::fmt::Debug;
+use std::{fmt::Debug, num::NonZeroU64};
 
 mod utils;
 
-use derivative::Derivative;
-use utils::{from_usize, to_usize, UsizeInterop};
-
-/// A chunker config.
-pub trait Config {
-    /// The type used as a metric in the chunks space.
-    /// Used for chunk indexes and lengthes.
-    type ChunkSpaceUnit: Debug + Copy + UsizeInterop;
-    /// The type used as a metric in the byte space.
-    /// Used for sizes and offsets.
-    type ByteSpaceUnit: Debug + Copy + UsizeInterop;
-}
+/// The type for total size to the byte space.
+pub type TotalSize = u64;
+/// The type for a size of a signle chunk.
+pub type ChunkSize = NonZeroU64;
+/// The type for a size of the chunk index.
+pub type ChunkIndex = u64;
+/// The type for an offset in the byte space.
+pub type Offset = u64;
 
 /// The chunker can split an abstract linear bytes space into equally-sized
 /// (except for the last one) chunks.
 #[derive(Debug)]
-pub struct Chunker<C: Config> {
+pub struct Chunker {
     /// The total size of the bytes space.
-    pub total_size: C::ByteSpaceUnit,
+    pub total_size: TotalSize,
     /// The size of a chunk.
-    pub chunk_size: C::ByteSpaceUnit,
+    pub chunk_size: ChunkSize,
 }
 
 /// An error when calculating the chunk offset.
 #[derive(Debug)]
-pub enum ChunkOffsetError<C: Config> {
+pub enum ChunkOffsetError {
     /// The data is empty, so no valid offsets exist.
     EmptyData,
     /// The offset has overflowed its type bound.
     OffsetOverflow,
     /// The offset is greater than the last valid offset of the data.
-    OutOfDataBounds(C::ByteSpaceUnit),
+    OutOfDataBounds(Offset),
 }
 
-impl<C: Config> Chunker<C> {
+impl Chunker {
     /// Capture and return the chunk with a given index.
     pub fn capture_chunk(
         &self,
-        chunk_index: C::ChunkSpaceUnit,
-    ) -> Result<CapturedChunk<C>, ChunkOffsetError<C>> {
+        chunk_index: ChunkIndex,
+    ) -> Result<CapturedChunk, ChunkOffsetError> {
         let (first_byte_offset, last_byte_offset) = self.chunk_offsets(chunk_index)?;
         Ok(CapturedChunk {
             index: chunk_index,
@@ -56,37 +52,34 @@ impl<C: Config> Chunker<C> {
     /// index.
     pub fn chunk_offsets(
         &self,
-        chunk_index: C::ChunkSpaceUnit,
-    ) -> Result<(C::ByteSpaceUnit, C::ByteSpaceUnit), ChunkOffsetError<C>> {
-        let last_valid_offset = utils::last_valid_offset(to_usize(self.total_size))
-            .ok_or(ChunkOffsetError::EmptyData)?;
+        chunk_index: ChunkIndex,
+    ) -> Result<(Offset, Offset), ChunkOffsetError> {
+        let last_valid_offset =
+            utils::last_valid_offset(self.total_size).ok_or(ChunkOffsetError::EmptyData)?;
 
-        let first_byte_offset = to_usize(chunk_index) * to_usize(self.chunk_size);
+        let first_byte_offset = chunk_index * self.chunk_size.get();
         if !utils::is_within_bound(first_byte_offset, last_valid_offset) {
-            return Err(ChunkOffsetError::OutOfDataBounds(from_usize(
-                first_byte_offset,
-            )));
+            return Err(ChunkOffsetError::OutOfDataBounds(first_byte_offset));
         }
 
         let last_byte_offset =
-            utils::first_to_last_byte_of_chunk(first_byte_offset, to_usize(self.chunk_size));
+            utils::first_to_last_byte_of_chunk(first_byte_offset, self.chunk_size);
         let last_byte_offset =
             utils::bounded(last_byte_offset, last_valid_offset).unwrap_or(last_valid_offset);
 
-        Ok((from_usize(first_byte_offset), from_usize(last_byte_offset)))
+        Ok((first_byte_offset, last_byte_offset))
     }
 }
 
 /// The captured chunk information.
 ///
 /// Useful for when you need to compute the offsets just once and cache them.
-#[derive(Derivative)]
-#[derivative(Debug, Clone, Copy)]
-pub struct CapturedChunk<C: Config> {
+#[derive(Debug, Clone, Copy)]
+pub struct CapturedChunk {
     /// The index of the chunk.
-    pub index: C::ChunkSpaceUnit,
+    pub index: ChunkIndex,
     /// The first byte offset of this chunk.
-    pub first_byte_offset: C::ByteSpaceUnit,
+    pub first_byte_offset: Offset,
     /// The last byte offset of this chunk.
-    pub last_byte_offset: C::ByteSpaceUnit,
+    pub last_byte_offset: Offset,
 }
