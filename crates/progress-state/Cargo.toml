@@ -1,0 +1,10 @@
+[package]
+name = "quickload-progress-state"
+version = "0.1.0"
+authors = ["MOZGIII <mike-n@narod.ru>"]
+edition = "2021"
+
+[dependencies]
+quickload-chunker = { path = "../chunker" }
+
+serde = { version = "1", features = ["derive"] }
