@@ -6,35 +6,18 @@ use hyper::{
     http,
 };
 use positioned_io_preview::RandomAccessFile;
-use quickload_chunker::{CapturedChunk, Config};
+use quickload_chunker::{CapturedChunk, TotalSize};
 use quickload_disk_space_allocation as disk_space_allocation;
-use std::{fs::OpenOptions, num::NonZeroU64, path::Path, sync::Arc};
+use std::{fs::OpenOptions, path::Path, sync::Arc};
 use tokio::sync::{mpsc, oneshot, Semaphore};
 use tokio_util::sync::CancellationToken;
-
-/// The type we use for data size calculations.
-pub type ByteSize = u64;
-
-/// The type we use for chunk size.
-pub type NonZeroByteSize = NonZeroU64;
-
-/// The config type for the chunker.
-#[derive(Debug)]
-pub enum ChunkerConfig {}
-
-impl Config for ChunkerConfig {
-    type ChunkIndex = u64;
-    type TotalSize = ByteSize;
-    type ChunkSize = NonZeroByteSize;
-    type Offset = ByteSize;
-}
 
 /// Issue an HTTP request with a HEAD method to the URL you need
 /// to download and attempt to detect the size of the data to accomodate.
 pub async fn detect_size<C>(
     client: &hyper::Client<C>,
     uri: &hyper::Uri,
-) -> Result<ByteSize, anyhow::Error>
+) -> Result<TotalSize, anyhow::Error>
 where
     C: hyper::client::connect::Connect + Clone + Send + Sync + 'static,
 {
@@ -73,7 +56,7 @@ where
 /// will be used to interface with the filesystem.
 pub fn init_file(
     into: impl AsRef<Path>,
-    total_size: ByteSize,
+    total_size: TotalSize,
 ) -> Result<RandomAccessFile, anyhow::Error> {
     let mut writer = OpenOptions::new()
         .write(true)
@@ -101,7 +84,7 @@ pub struct Loader<C, W> {
     pub writer: W,
     /// The chunk picker to define the strategy of picking the order of
     /// the chunks to download.
-    pub chunker: quickload_chunker::Chunker<ChunkerConfig>,
+    pub chunker: quickload_chunker::Chunker,
     /// Cancellation token for terminating after the queued write requests are fulfilled.
     pub cancel_write_queued: CancellationToken,
     /// Cancellation token for terminating quick and dropping the pending write requests.
@@ -186,7 +169,7 @@ where
     async fn process_chunk(
         client: Arc<hyper::Client<C>>,
         uri: hyper::Uri,
-        chunk: quickload_chunker::CapturedChunk<ChunkerConfig>,
+        chunk: quickload_chunker::CapturedChunk,
         write_queue: mpsc::Sender<WriteRequest>,
     ) -> Result<(), anyhow::Error> {
         let CapturedChunk {
@@ -242,7 +225,7 @@ where
             };
 
             let data = data_read_result?;
-            let len = data.len() as ByteSize;
+            let len = data.len() as TotalSize;
             let (completed_tx, completed_rx) = oneshot::channel();
             let result = write_queue
                 .send(WriteRequest {
