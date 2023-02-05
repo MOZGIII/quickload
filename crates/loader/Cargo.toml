@@ -10,6 +10,7 @@ quickload-disk-space-allocation = { path = "../disk-space-allocation" }
 quickload-linear-chunk-picker = { path = "../linear-chunk-picker" }
 
 anyhow = "1.0"
+async-trait = "0.1"
 futures-util = "0.3"
 hyper = { version = "0.14", features = ["client", "http1", "http2"] }
 positioned-io-preview = "0.3"

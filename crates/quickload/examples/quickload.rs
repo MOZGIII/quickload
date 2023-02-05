@@ -4,7 +4,7 @@
 use std::sync::Arc;
 
 use clap::Parser;
-use quickload_chunker::ChunkSize;
+use quickload_chunker::{ChunkSize, TotalSize};
 
 /// The CLI app.
 #[derive(Debug, Parser)]
@@ -48,6 +48,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         chunker,
         cancel_write_queued: cancel_write_queued.clone(),
         cancel_drop_queued: cancel_drop_queued.clone(),
+        net_progress_reporter: Arc::new(reporter("net", total_size)),
+        disk_progress_reporter: reporter("disk", total_size),
     };
 
     tokio::spawn(async move {
@@ -62,4 +64,51 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     loader.run().await?;
 
     Ok(())
+}
+
+/// Create a reporter that will report the progress to the command like periodically.
+pub fn reporter(
+    name: &'static str,
+    total_size: TotalSize,
+) -> impl quickload_loader::progress::Reporter {
+    let (progress_reports_tx, progress_reports_rx) = tokio::sync::mpsc::channel(1);
+    let (ranges_snapshot_requests_tx, ranges_snapshot_requests_rx) = tokio::sync::mpsc::channel(1);
+
+    let manager = quickload_progress_state_reporter::StateManager {
+        progress_reports_rx,
+        ranges_snapshot_requests_rx,
+        total_size,
+    };
+    tokio::spawn(manager.run());
+
+    tokio::spawn(async move {
+        loop {
+            let (tx, rx) = tokio::sync::oneshot::channel();
+            if ranges_snapshot_requests_tx.send(tx).await.is_err() {
+                break;
+            }
+            let snapshot = match rx.await {
+                Ok(val) => val,
+                Err(_) => break,
+            };
+
+            tracing::info!(message = "Progress", reporter = %name, total_size = %snapshot.total_size, ranges = %format_ranges(&snapshot));
+            tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+        }
+    });
+
+    quickload_progress_state_reporter::Reporter {
+        tx: progress_reports_tx,
+    }
+}
+
+/// Format the ranges into a more compact representation.
+fn format_ranges(snapshot: &quickload_progress_state_reporter::Snapshot) -> String {
+    let mut s: String = snapshot
+        .ranges
+        .iter()
+        .map(|range| format!("{}-{},", range.start, range.end))
+        .collect();
+    s.truncate(s.trim_end_matches(',').len());
+    s
 }
