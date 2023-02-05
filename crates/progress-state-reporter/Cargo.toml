@@ -1,0 +1,14 @@
+[package]
+name = "quickload-progress-state-reporter"
+version = "0.1.0"
+authors = ["MOZGIII <mike-n@narod.ru>"]
+edition = "2021"
+
+[dependencies]
+quickload-chunker = { path = "../chunker" }
+quickload-loader = { path = "../loader" }
+quickload-progress-state = { path = "../progress-state" }
+
+async-trait = "0.1"
+serde = { version = "1", features = ["derive"] }
+tokio = { version = "1", features = ["sync"] }
