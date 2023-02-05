@@ -48,6 +48,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         chunker,
         cancel_write_queued: cancel_write_queued.clone(),
         cancel_drop_queued: cancel_drop_queued.clone(),
+        net_progress_reporter: Arc::new(quickload_loader::progress::TracingReporter::from_static(
+            "net",
+        )),
+        disk_progress_reporter: quickload_loader::progress::TracingReporter::from_static("disk"),
     };
 
     tokio::spawn(async move {

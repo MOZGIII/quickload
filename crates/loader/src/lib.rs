@@ -1,5 +1,7 @@
 //! The quickload loader implementation.
 
+pub mod progress;
+
 use anyhow::{anyhow, bail};
 use hyper::{
     body::{Bytes, HttpBody},
@@ -75,7 +77,7 @@ pub fn init_file(
 /// When the cancellation it triggered vie any of the cancellation tokens, the [`Loader::run`] will
 /// gracefully terminate the download process as soon as possible (even if the file is not fully
 /// downloaded or written).
-pub struct Loader<C, W> {
+pub struct Loader<C, W, NP, DP> {
     /// A hyper client we can share across multiple threads.
     pub client: Arc<hyper::Client<C>>,
     /// The the URL to download.
@@ -89,12 +91,18 @@ pub struct Loader<C, W> {
     pub cancel_write_queued: CancellationToken,
     /// Cancellation token for terminating quick and dropping the pending write requests.
     pub cancel_drop_queued: CancellationToken,
+    /// The progress reporter for the networking side.
+    pub net_progress_reporter: Arc<NP>,
+    /// The progress reporter for the disk side.
+    pub disk_progress_reporter: DP,
 }
 
-impl<C, W> Loader<C, W>
+impl<C, W, NP, DP> Loader<C, W, NP, DP>
 where
     C: hyper::client::connect::Connect + Clone + Send + Sync + 'static,
     W: positioned_io_preview::WriteAt + Send + 'static,
+    NP: progress::Reporter + Send + Sync + 'static,
+    DP: progress::Reporter + Send + Sync + 'static,
 {
     /// Run the download operation represented by this loader.
     pub async fn run(self) -> Result<(), anyhow::Error> {
@@ -105,6 +113,8 @@ where
             writer,
             cancel_write_queued,
             cancel_drop_queued,
+            net_progress_reporter,
+            disk_progress_reporter,
         } = self;
 
         let (write_queue_tx, write_queue_rx) = mpsc::channel(16);
@@ -115,6 +125,7 @@ where
                 write_queue_rx,
                 cancel_write_queued,
                 cancel_drop_queued,
+                disk_progress_reporter,
             )
             .await;
             if let Err(error) = result {
@@ -137,8 +148,11 @@ where
             let write_queue_tx = write_queue_tx.clone();
             let client = Arc::clone(&client);
             let uri = uri.clone();
+            let net_progress_reporter = Arc::clone(&net_progress_reporter);
             chunk_processing_set.spawn(async move {
-                let result = Self::process_chunk(client, uri, chunk, write_queue_tx).await;
+                let result =
+                    Self::process_chunk(client, uri, chunk, write_queue_tx, net_progress_reporter)
+                        .await;
                 drop(permit);
                 if let Err(error) = result {
                     tracing::error!(message = "chunk processing error", ?error, ?chunk);
@@ -171,12 +185,15 @@ where
         uri: hyper::Uri,
         chunk: quickload_chunker::CapturedChunk,
         write_queue: mpsc::Sender<WriteRequest>,
+        progress_reporter: Arc<NP>,
     ) -> Result<(), anyhow::Error> {
         let CapturedChunk {
             first_byte_offset,
             last_byte_offset,
             ..
         } = chunk;
+
+        let progress_reporter = progress_reporter.as_ref();
 
         let range_header = format!("bytes={first_byte_offset}-{last_byte_offset}");
 
@@ -241,6 +258,7 @@ where
                 tracing::debug!(message = "unable to send write request", offset = %failed_request.pos);
                 anyhow::bail!("unable to post a request to a write queue");
             }
+            progress_reporter.report(pos, len).await;
             completed_rx.await?;
             pos += len;
         }
@@ -261,6 +279,8 @@ where
         cancel_gacefully: CancellationToken,
         // Drop the queue discarding all remaining write requests.
         cancel_flush_only: CancellationToken,
+        // The progress reporter,
+        progress_reporter: DP,
     ) -> Result<(), anyhow::Error> {
         let mut is_cancelling_gracefully = false;
         loop {
@@ -297,6 +317,8 @@ where
                 // This is no big deal, we'll just log it and continue serving the queue.
                 tracing::debug!(message = "unable to send a write completion notification");
             }
+
+            progress_reporter.report(pos, buf.len() as Size).await;
         }
         tokio::task::block_in_place(|| writer.flush())?;
         Ok(())
