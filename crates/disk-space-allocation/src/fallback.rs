@@ -21,7 +21,7 @@ pub(super) fn allocate(file: &mut File, len: u64) -> Result<(), std::io::Error> 
     };
 
     // Store current file position.
-    let current_pos = file.seek(SeekFrom::Current(0))?;
+    let current_pos = file.stream_position()?;
 
     // Go back one byte behind the desired end of file and write a zero.
     file.seek(SeekFrom::Start(pre_end_pos))?;

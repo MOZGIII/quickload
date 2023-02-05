@@ -195,7 +195,7 @@ where
             ..
         } = chunk;
 
-        let range_header = format!("bytes={}-{}", first_byte_offset, last_byte_offset);
+        let range_header = format!("bytes={first_byte_offset}-{last_byte_offset}");
 
         let req = http::Request::builder()
             .uri(uri)
