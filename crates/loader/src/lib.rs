@@ -131,7 +131,12 @@ where
                         Err(ErrorBehavior::Retriable(err)) => {
                             if retries > 0 {
                                 retries -= 1;
-                                tracing::warn!(message = "got a retriable error while loading the chunk, retrying", retires_left = %retries, error = %err);
+                                tracing::warn!(
+                                    message = "got a retriable error while loading the chunk, retrying",
+                                    retires_left = %retries,
+                                    ?chunk,
+                                    error = %err,
+                                );
                                 continue;
                             }
                             Err(err)
