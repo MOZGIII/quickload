@@ -45,6 +45,8 @@ pub struct Loader<Connect, Writer, NetProgressReporter, DiskProgressReporter, Ch
     pub chunk_validator: Arc<ChunkValidator>,
     /// Max amount of retries to download the chunk.
     pub max_chunk_load_retries: usize,
+    /// Networking concurrency.
+    pub net_concurrency: usize,
 }
 
 impl<Connect, Writer, NetProgressReporter, DiskProgressReporter, ChunkValidator>
@@ -75,9 +77,10 @@ where
             disk_progress_reporter,
             chunk_validator,
             max_chunk_load_retries,
+            net_concurrency,
         } = self;
 
-        let (write_queue_tx, write_queue_rx) = mpsc::channel(16);
+        let (write_queue_tx, write_queue_rx) = mpsc::channel(net_concurrency * 2);
 
         let writer_loop_handle = tokio::spawn(async move {
             let result = Self::write_loop(
@@ -95,7 +98,7 @@ where
 
         let chunk_picker = quickload_linear_chunk_picker::Linear::new(&chunker);
 
-        let sem = Arc::new(Semaphore::new(8));
+        let sem = Arc::new(Semaphore::new(net_concurrency));
         let mut chunk_processing_set = tokio::task::JoinSet::new();
         for chunk in chunk_picker {
             // If the writer queue is closed we can safely quit - there is no way we can submit

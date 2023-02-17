@@ -19,6 +19,9 @@ struct Cli {
     /// Max retries to load a chunk (per each chunk).
     #[clap(long, default_value_t = 3)]
     pub max_chunk_load_retries: usize,
+    /// Network concurrency.
+    #[clap(long, default_value_t = 8)]
+    pub net_concurrency: usize,
 }
 
 #[tokio::main]
@@ -30,6 +33,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         file_path,
         chunk_size,
         max_chunk_load_retries,
+        net_concurrency,
     } = Cli::parse();
 
     quickload_disk_space_allocation::prepare_privileges()?;
@@ -56,6 +60,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         disk_progress_reporter: reporter("disk", total_size),
         chunk_validator: Arc::new(quickload_loader::chunk_validator::Noop),
         max_chunk_load_retries,
+        net_concurrency,
     };
 
     tokio::spawn(async move {
