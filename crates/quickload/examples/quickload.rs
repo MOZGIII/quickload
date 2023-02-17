@@ -14,7 +14,7 @@ struct Cli {
     /// The file path to save the downloaded data as.
     pub file_path: String,
     /// The chunk size to use.
-    #[clap(long, default_value = "4194304" /* 1024 * 1024 = 4 MB */)]
+    #[clap(long, default_value = "4194304" /* 1024 * 1024 * 4 = 4 MB */)]
     pub chunk_size: ChunkSize,
     /// Max retries to load a chunk (per each chunk).
     #[clap(long, default_value_t = 3)]
