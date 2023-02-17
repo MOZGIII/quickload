@@ -1,0 +1,15 @@
+[package]
+name = "quickload-checksum"
+version = "0.1.0"
+authors = ["MOZGIII <mike-n@narod.ru>"]
+edition = "2021"
+
+[dependencies]
+quickload-chunker = { path = "../chunker" }
+
+hex = { git = "https://github.com/elichai/rust-hex", rev = "8b46630cf40abd97f9c4a66d996c04ebf7db5003", features = ["serde"] }
+serde = { version = "1", features = ["derive"] }
+
+[dev-dependencies]
+serde_json = "1"
+hex-literal = "0.3"
