@@ -77,13 +77,13 @@ pub fn init_file(
 /// When the cancellation it triggered vie any of the cancellation tokens, the [`Loader::run`] will
 /// gracefully terminate the download process as soon as possible (even if the file is not fully
 /// downloaded or written).
-pub struct Loader<C, W, NP, DP> {
+pub struct Loader<Connect, Writer, NetProgressReporter, DiskProgressReporter> {
     /// A hyper client we can share across multiple threads.
-    pub client: Arc<hyper::Client<C>>,
+    pub client: Arc<hyper::Client<Connect>>,
     /// The the URL to download.
     pub uri: hyper::Uri,
     /// The write to write to (file for instance).
-    pub writer: W,
+    pub writer: Writer,
     /// The chunk picker to define the strategy of picking the order of
     /// the chunks to download.
     pub chunker: quickload_chunker::Chunker,
@@ -92,17 +92,18 @@ pub struct Loader<C, W, NP, DP> {
     /// Cancellation token for terminating quick and dropping the pending write requests.
     pub cancel_drop_queued: CancellationToken,
     /// The progress reporter for the networking side.
-    pub net_progress_reporter: Arc<NP>,
+    pub net_progress_reporter: Arc<NetProgressReporter>,
     /// The progress reporter for the disk side.
-    pub disk_progress_reporter: DP,
+    pub disk_progress_reporter: DiskProgressReporter,
 }
 
-impl<C, W, NP, DP> Loader<C, W, NP, DP>
+impl<Connect, Writer, NetProgressReporter, DiskProgressReporter>
+    Loader<Connect, Writer, NetProgressReporter, DiskProgressReporter>
 where
-    C: hyper::client::connect::Connect + Clone + Send + Sync + 'static,
-    W: positioned_io_preview::WriteAt + Send + 'static,
-    NP: progress::Reporter + Send + Sync + 'static,
-    DP: progress::Reporter + Send + Sync + 'static,
+    Connect: hyper::client::connect::Connect + Clone + Send + Sync + 'static,
+    Writer: positioned_io_preview::WriteAt + Send + 'static,
+    NetProgressReporter: progress::Reporter + Send + Sync + 'static,
+    DiskProgressReporter: progress::Reporter + Send + Sync + 'static,
 {
     /// Run the download operation represented by this loader.
     pub async fn run(self) -> Result<(), anyhow::Error> {
@@ -181,11 +182,11 @@ where
     /// Process the given chunk by issuing a data download request, and then submitting the data
     /// received from the request to the disk writing queue.
     async fn process_chunk(
-        client: Arc<hyper::Client<C>>,
+        client: Arc<hyper::Client<Connect>>,
         uri: hyper::Uri,
         chunk: quickload_chunker::CapturedChunk,
         write_queue: mpsc::Sender<WriteRequest>,
-        progress_reporter: Arc<NP>,
+        progress_reporter: Arc<NetProgressReporter>,
     ) -> Result<(), anyhow::Error> {
         let CapturedChunk {
             first_byte_offset,
@@ -273,14 +274,14 @@ where
 
     /// Run the disk write loop, serving the write queue requests and writing the data to the disk.
     async fn write_loop(
-        mut writer: W,
+        mut writer: Writer,
         mut queue: mpsc::Receiver<WriteRequest>,
         // Close the queue put process all remanining write requests.
         cancel_gacefully: CancellationToken,
         // Drop the queue discarding all remaining write requests.
         cancel_flush_only: CancellationToken,
         // The progress reporter,
-        progress_reporter: DP,
+        progress_reporter: DiskProgressReporter,
     ) -> Result<(), anyhow::Error> {
         let mut is_cancelling_gracefully = false;
         loop {
