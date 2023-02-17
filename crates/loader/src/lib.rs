@@ -1,74 +1,20 @@
 //! The quickload loader implementation.
 
+pub mod chunk_validator;
+mod http_partial_loader;
 pub mod progress;
+mod utils;
 
-use anyhow::{anyhow, bail};
-use hyper::{
-    body::{Bytes, HttpBody},
-    http,
-};
-use positioned_io_preview::RandomAccessFile;
-use quickload_chunker::{CapturedChunk, Offset, Size, TotalSize};
-use quickload_disk_space_allocation as disk_space_allocation;
-use std::{fs::OpenOptions, path::Path, sync::Arc};
+use futures_util::{future::Either, TryFutureExt};
+use hyper::body::{Bytes, HttpBody};
+use quickload_chunker::{CapturedChunk, Offset, Size};
+use std::sync::Arc;
 use tokio::sync::{mpsc, oneshot, Semaphore};
 use tokio_util::sync::CancellationToken;
 
-/// Issue an HTTP request with a HEAD method to the URL you need
-/// to download and attempt to detect the size of the data to accomodate.
-pub async fn detect_size<C>(
-    client: &hyper::Client<C>,
-    uri: &hyper::Uri,
-) -> Result<Size, anyhow::Error>
-where
-    C: hyper::client::connect::Connect + Clone + Send + Sync + 'static,
-{
-    let response = client
-        .request(
-            http::Request::builder()
-                .method(http::Method::HEAD)
-                .uri(uri.clone())
-                .body(hyper::Body::empty())?,
-        )
-        .await?;
+use crate::chunk_validator::ErrorEffect;
 
-    let headers = response.headers();
-
-    let size = headers
-        .get(http::header::CONTENT_LENGTH)
-        .ok_or_else(|| anyhow!("unable to detect size: HEAD didn't return Content-Length header"))?
-        .to_str()?
-        .parse()?;
-
-    let supports_ranges = headers
-        .get_all(http::header::ACCEPT_RANGES)
-        .into_iter()
-        .any(|val| val == "bytes");
-    if !supports_ranges {
-        bail!("server does not accept range requests");
-    }
-
-    Ok(size)
-}
-
-/// Initialize the file for use with the loader.
-///
-/// The underlying disk space will be allocated via
-/// the  [`disk_space_allocation`] facilities, and the [`RandomAccessFile`]
-/// will be used to interface with the filesystem.
-pub fn init_file(
-    into: impl AsRef<Path>,
-    total_size: TotalSize,
-) -> Result<RandomAccessFile, anyhow::Error> {
-    let mut writer = OpenOptions::new()
-        .write(true)
-        .create(true)
-        .truncate(true)
-        .open(into)?;
-    disk_space_allocation::allocate(&mut writer, total_size)?;
-    let writer = RandomAccessFile::try_new(writer)?;
-    Ok(writer)
-}
+pub use self::utils::*;
 
 /// The loader.
 ///
@@ -77,7 +23,7 @@ pub fn init_file(
 /// When the cancellation it triggered vie any of the cancellation tokens, the [`Loader::run`] will
 /// gracefully terminate the download process as soon as possible (even if the file is not fully
 /// downloaded or written).
-pub struct Loader<Connect, Writer, NetProgressReporter, DiskProgressReporter> {
+pub struct Loader<Connect, Writer, NetProgressReporter, DiskProgressReporter, ChunkValidator> {
     /// A hyper client we can share across multiple threads.
     pub client: Arc<hyper::Client<Connect>>,
     /// The the URL to download.
@@ -95,15 +41,24 @@ pub struct Loader<Connect, Writer, NetProgressReporter, DiskProgressReporter> {
     pub net_progress_reporter: Arc<NetProgressReporter>,
     /// The progress reporter for the disk side.
     pub disk_progress_reporter: DiskProgressReporter,
+    /// The chunk validator to use.
+    pub chunk_validator: Arc<ChunkValidator>,
 }
 
-impl<Connect, Writer, NetProgressReporter, DiskProgressReporter>
-    Loader<Connect, Writer, NetProgressReporter, DiskProgressReporter>
+impl<Connect, Writer, NetProgressReporter, DiskProgressReporter, ChunkValidator>
+    Loader<Connect, Writer, NetProgressReporter, DiskProgressReporter, ChunkValidator>
 where
     Connect: hyper::client::connect::Connect + Clone + Send + Sync + 'static,
     Writer: positioned_io_preview::WriteAt + Send + 'static,
     NetProgressReporter: progress::Reporter + Send + Sync + 'static,
     DiskProgressReporter: progress::Reporter + Send + Sync + 'static,
+    ChunkValidator: chunk_validator::ChunkValidator + Send + Sync + 'static,
+    <ChunkValidator as chunk_validator::ChunkValidator>::InitError:
+        std::error::Error + Send + Sync + 'static,
+    <ChunkValidator as chunk_validator::ChunkValidator>::UpdateError:
+        std::error::Error + Send + Sync + 'static,
+    <ChunkValidator as chunk_validator::ChunkValidator>::FinalizeError:
+        std::error::Error + Send + Sync + 'static,
 {
     /// Run the download operation represented by this loader.
     pub async fn run(self) -> Result<(), anyhow::Error> {
@@ -116,6 +71,7 @@ where
             cancel_drop_queued,
             net_progress_reporter,
             disk_progress_reporter,
+            chunk_validator,
         } = self;
 
         let (write_queue_tx, write_queue_rx) = mpsc::channel(16);
@@ -150,10 +106,34 @@ where
             let client = Arc::clone(&client);
             let uri = uri.clone();
             let net_progress_reporter = Arc::clone(&net_progress_reporter);
+            let chunk_validator = Arc::clone(&chunk_validator);
             chunk_processing_set.spawn(async move {
-                let result =
-                    Self::process_chunk(client, uri, chunk, write_queue_tx, net_progress_reporter)
-                        .await;
+                let mut retries = 3;
+
+                let result = loop {
+                    let result = Self::process_chunk(
+                        Arc::clone(&client),
+                        uri.clone(),
+                        chunk,
+                        write_queue_tx.clone(),
+                        Arc::clone(&net_progress_reporter),
+                        Arc::clone(&chunk_validator),
+                    )
+                    .await;
+                    let result = match result {
+                        Ok(val) => Ok(val),
+                        Err(ErrorBehavior::Retriable(err)) => {
+                            if retries > 0 {
+                                retries -= 1;
+                                tracing::warn!(message = "got a retriable error while loading the chunk, retrying", retires_left = %retries, error = %err);
+                                continue;
+                            }
+                            Err(err)
+                        }
+                        Err(ErrorBehavior::NonRetriable(err)) => Err(err),
+                    };
+                    break result;
+                };
                 drop(permit);
                 if let Err(error) = result {
                     tracing::error!(message = "chunk processing error", ?error, ?chunk);
@@ -187,88 +167,129 @@ where
         chunk: quickload_chunker::CapturedChunk,
         write_queue: mpsc::Sender<WriteRequest>,
         progress_reporter: Arc<NetProgressReporter>,
-    ) -> Result<(), anyhow::Error> {
+        chunk_validator: Arc<ChunkValidator>,
+    ) -> Result<(), ErrorBehavior<ProcessChunkError<ChunkValidator>>> {
+        if write_queue.is_closed() {
+            return Err(ErrorBehavior::NonRetriable(
+                ProcessChunkError::WriteQueueClosed("precheck"),
+            ));
+        }
+
         let CapturedChunk {
             first_byte_offset,
             last_byte_offset,
+            index,
             ..
         } = chunk;
 
         let progress_reporter = progress_reporter.as_ref();
 
-        let range_header = format!("bytes={first_byte_offset}-{last_byte_offset}");
-
-        let req = http::Request::builder()
-            .uri(uri)
-            .header(hyper::header::RANGE, range_header)
-            .body(hyper::Body::empty())?;
-
-        if write_queue.is_closed() {
-            anyhow::bail!("write queue closed, bailing on issuing the request");
-        }
-
-        let res = tokio::select! {
-            _ = write_queue.closed() => {
-                anyhow::bail!("write queue closed, bailing on completing the request");
-            }
-            request_result = client.request(req) => request_result?,
+        let loader = http_partial_loader::Loader {
+            client,
+            byte_range: (first_byte_offset, last_byte_offset),
+            uri,
         };
-        let status = res.status();
-        anyhow::ensure!(
-            status == http::StatusCode::PARTIAL_CONTENT,
-            "HTTP response has unexpected status {}",
-            status
-        );
 
-        let content_range = res
-            .headers()
-            .get(http::header::CONTENT_RANGE)
-            .ok_or_else(|| anyhow!("no content-range header in response"))?;
-        tracing::info!(message = "loading data", content_range = %content_range.to_str()?);
+        let validation_state_handle: abort_on_drop::ChildTask<_> = {
+            let chunk_validator = Arc::clone(&chunk_validator);
+            tokio::spawn(async move { chunk_validator.init(index).await }).into()
+        };
+        let handshake_handle: abort_on_drop::ChildTask<_> = tokio::spawn(loader.handshake()).into();
 
-        let mut body = res.into_body();
+        let init_fut = async {
+            let validation_state = validation_state_handle.await.unwrap().map_err(|err| {
+                ErrorBehavior::NonRetriable(ProcessChunkError::ValidationStateInit(err))
+            })?;
+            let body = handshake_handle.await.unwrap().map_err(|err| {
+                let is_retriable =
+                    matches!(&err, http_partial_loader::HandshakeError::Request(err) if err.is_incomplete_message() || err.is_timeout());
+                if is_retriable {
+                    ErrorBehavior::Retriable(ProcessChunkError::LoaderHandshake(err))
+                } else {
+                    ErrorBehavior::NonRetriable(ProcessChunkError::LoaderHandshake(err))
+                }
+            })?;
+            Ok((body, validation_state))
+        };
+
+        let (mut body, mut validation_state) = tokio::select! {
+            _ = write_queue.closed() => return Err(ErrorBehavior::NonRetriable(ProcessChunkError::WriteQueueClosed("init"))),
+            init_result = init_fut => init_result?,
+        };
 
         let mut pos = first_byte_offset;
         loop {
-            let data_read_result = tokio::select! {
-                _ = write_queue.closed() => {
-                    anyhow::bail!("write queue closed, bailing on loading more data");
-                }
+            let data = tokio::select! {
+                _ = write_queue.closed() => return Err(ErrorBehavior::NonRetriable(ProcessChunkError::WriteQueueClosed("data"))),
                 maybe_data = body.data() => {
                     match maybe_data {
-                        Some(data) => data,
+                        Some(Ok(data)) => data,
+                        Some(Err(error)) => return Err(ErrorBehavior::Retriable(ProcessChunkError::LoaderData(error))),
                         None => break,
                     }
                 }
             };
 
-            let data = data_read_result?;
             let len = data.len() as Size;
             let (completed_tx, completed_rx) = oneshot::channel();
-            let result = write_queue
+
+            let validator_update_result = chunk_validator
+                .update(&mut validation_state, data.clone())
+                .map_err(Either::Left);
+            let write_queue_send_result = write_queue
                 .send(WriteRequest {
                     pos,
                     buf: data,
                     completed_tx,
                 })
-                .await;
-            if let Err(mpsc::error::SendError(failed_request)) = result {
-                // We are unable to send a request to the write queue
-                // because the channel is closed.
-                // The disk writer must've terminated, so we clean up.
-                tracing::debug!(message = "unable to send write request", offset = %failed_request.pos);
-                anyhow::bail!("unable to post a request to a write queue");
+                .map_err(Either::Right);
+
+            let result = tokio::try_join![validator_update_result, write_queue_send_result];
+            match result {
+                Err(Either::Right(mpsc::error::SendError(failed_request))) => {
+                    // We are unable to send a request to the write queue
+                    // because the channel is closed.
+                    // The disk writer must've terminated, so we clean up.
+                    tracing::debug!(message = "unable to send write request", offset = %failed_request.pos);
+                    return Err(ErrorBehavior::NonRetriable(
+                        ProcessChunkError::WriteQueueClosed("posting to write queue"),
+                    ));
+                }
+                Err(Either::Left(update_error)) => {
+                    if update_error.bad_chunk() {
+                        tracing::debug!(message = "chunk validator reported bad chunk, restarting chunk loading", error = %update_error);
+                        return Err(ErrorBehavior::Retriable(
+                            ProcessChunkError::ValidationStateUpdate(update_error),
+                        ));
+                    }
+                    return Err(ErrorBehavior::NonRetriable(
+                        ProcessChunkError::ValidationStateUpdate(update_error),
+                    ));
+                }
+                Ok(_) => {}
             }
             progress_reporter.report(pos, len).await;
-            completed_rx.await?;
+            completed_rx.await.map_err(|error| {
+                ErrorBehavior::NonRetriable(ProcessChunkError::WriteCompletionChannelClosed(error))
+            })?;
             pos += len;
         }
-        anyhow::ensure!(
-            last_byte_offset == pos - 1,
-            "bytes written ({}) doen't match files expected to write ({})",
-            pos - 1,
-            last_byte_offset,
-        );
+        let last_written_offset = pos - 1;
+        if last_byte_offset != last_written_offset {
+            return Err(ErrorBehavior::Retriable(ProcessChunkError::SizeMismatch {
+                last_written_offset,
+                expected_last_written_offset: last_byte_offset,
+            }));
+        }
+
+        // Before completing the processing, verify the chunk.
+        chunk_validator
+            .finalize(validation_state)
+            .await
+            .map_err(|err| {
+                ErrorBehavior::Retriable(ProcessChunkError::ValidationStateFinalize(err))
+            })?;
+
         Ok(())
     }
 
@@ -336,4 +357,59 @@ struct WriteRequest {
     buf: Bytes,
     /// A channel to notify the chunk loader about the completion.
     completed_tx: oneshot::Sender<()>,
+}
+
+/// Whether the error is retriable or not.
+#[derive(Debug, thiserror::Error)]
+enum ErrorBehavior<T> {
+    /// The processing should be retried.
+    #[error(transparent)]
+    Retriable(T),
+    /// The processing should not be retried.
+    #[error(transparent)]
+    NonRetriable(T),
+}
+
+/// The chunk processing error.
+#[derive(derivative::Derivative, thiserror::Error)]
+#[derivative(Debug)]
+enum ProcessChunkError<ChunkValidator>
+where
+    ChunkValidator: chunk_validator::ChunkValidator,
+    <ChunkValidator as chunk_validator::ChunkValidator>::InitError:
+        std::error::Error + Send + Sync + 'static,
+    <ChunkValidator as chunk_validator::ChunkValidator>::UpdateError:
+        std::error::Error + Send + Sync + 'static,
+    <ChunkValidator as chunk_validator::ChunkValidator>::FinalizeError:
+        std::error::Error + Send + Sync + 'static,
+{
+    /// The write queue was closed.
+    #[error("write queue closed ({0})")]
+    WriteQueueClosed(&'static str),
+    /// Error while conducting the initial handshake.
+    #[error(transparent)]
+    LoaderHandshake(http_partial_loader::HandshakeError),
+    /// Error while initializing the chunk validation state.
+    #[error(transparent)]
+    ValidationStateInit(ChunkValidator::InitError),
+    /// Error while loading the data.
+    #[error("loading error: {0}")]
+    LoaderData(hyper::Error),
+    /// Error while updating the chunk validation state.
+    #[error(transparent)]
+    ValidationStateUpdate(ChunkValidator::UpdateError),
+    /// Error while finalizing the chunk validation state.
+    #[error(transparent)]
+    ValidationStateFinalize(ChunkValidator::FinalizeError),
+    /// The downloaded data does not match the chunk size.
+    #[error("last written offset ({last_written_offset}) doesn't match the expected offset ({expected_last_written_offset})")]
+    SizeMismatch {
+        /// The last data offset that was affected by the write requests that we sent.
+        last_written_offset: Offset,
+        /// The expected last data offset to be affected by the loading of this chunk.
+        expected_last_written_offset: Offset,
+    },
+    /// The write completion channel was closed before we got the confirmation.
+    #[error("write completion channel closed")]
+    WriteCompletionChannelClosed(oneshot::error::RecvError),
 }

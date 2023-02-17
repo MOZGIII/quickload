@@ -50,6 +50,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         cancel_drop_queued: cancel_drop_queued.clone(),
         net_progress_reporter: Arc::new(reporter("net", total_size)),
         disk_progress_reporter: reporter("disk", total_size),
+        chunk_validator: Arc::new(quickload_loader::chunk_validator::Noop),
     };
 
     tokio::spawn(async move {
