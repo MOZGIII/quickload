@@ -43,6 +43,8 @@ pub struct Loader<Connect, Writer, NetProgressReporter, DiskProgressReporter, Ch
     pub disk_progress_reporter: DiskProgressReporter,
     /// The chunk validator to use.
     pub chunk_validator: Arc<ChunkValidator>,
+    /// Max amount of retries to download the chunk.
+    pub max_chunk_load_retries: usize,
 }
 
 impl<Connect, Writer, NetProgressReporter, DiskProgressReporter, ChunkValidator>
@@ -72,6 +74,7 @@ where
             net_progress_reporter,
             disk_progress_reporter,
             chunk_validator,
+            max_chunk_load_retries,
         } = self;
 
         let (write_queue_tx, write_queue_rx) = mpsc::channel(16);
@@ -108,7 +111,7 @@ where
             let net_progress_reporter = Arc::clone(&net_progress_reporter);
             let chunk_validator = Arc::clone(&chunk_validator);
             chunk_processing_set.spawn(async move {
-                let mut retries = 3;
+                let mut retries = max_chunk_load_retries;
 
                 let result = loop {
                     let result = Self::process_chunk(
