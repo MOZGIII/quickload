@@ -3,6 +3,7 @@
 pub mod chunk_validator;
 mod http_partial_loader;
 pub mod progress;
+mod resume;
 mod utils;
 
 use futures_util::{future::Either, TryFutureExt};
